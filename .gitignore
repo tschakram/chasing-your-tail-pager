@@ -1,0 +1,12 @@
+# Echte Config mit API-Keys nicht einchecken
+config.json
+
+# Loot-Daten (gesammelte Scan-Ergebnisse)
+loot/
+*.kismet
+*.log
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
