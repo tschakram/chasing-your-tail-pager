@@ -45,7 +45,7 @@
   },
 
   "kismet": {
-    "interface": "wlan1",
+    "interface": "wlan1mon",
     "scan_duration_seconds": 300,
     "log_prefix": "/root/loot/chasing_your_tail/kismet_data/kismet"
   }
