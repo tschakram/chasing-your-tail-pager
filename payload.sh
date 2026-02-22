@@ -172,11 +172,11 @@ LATEST=$(ls -t "$REPORT_DIR"/*.md 2>/dev/null | head -1)
 if [ "$RESULT" -eq 2 ]; then
     log "WARNUNG: Verdächtige Geräte erkannt!"
     LED AMBER SOLID
-    NOTIFY "CYT: Verdächtige Signale erkannt! Report: $LATEST"
+    NOTIFY "CYT: Verdächtige Signale erkannt! Report: $LATEST" 2>/dev/null || echo "[NOTIFY] CYT: Verdächtige Signale erkannt! Report: $LATEST"
 else
     log "Keine Auffälligkeiten."
     LED GREEN SOLID
-    NOTIFY "CYT: Scan abgeschlossen. Loot: $LOOT_DIR"
+    NOTIFY "CYT: Scan abgeschlossen. Loot: $LOOT_DIR" 2>/dev/null || echo "[NOTIFY] CYT: Scan abgeschlossen. Loot: $LOOT_DIR"
 fi
 
 log "Fertig. Alle Ergebnisse unter: $LOOT_DIR"
