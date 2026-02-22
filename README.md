@@ -3,17 +3,23 @@
 **Pineapple Pager Payload** | Kategorie: Reconnaissance  
 Basiert auf: [ArgeliusLabs/Chasing-Your-Tail-NG](https://github.com/ArgeliusLabs/Chasing-Your-Tail-NG) (MIT)
 
-Erkennt ob du verfolgt wirst – durch Analyse wiederkehrender WiFi-Probe-Requests via **Kismet** + optionaler **WiGLE**-Geolocation.
+Erkennt ob du verfolgt wirst – durch Analyse wiederkehrender WiFi-Probe-Requests via **tcpdump** + optionaler **WiGLE**-Geolocation.
+
+> **v2.0:** Kismet wurde durch tcpdump ersetzt – leichter, stabiler, direkt auf dem Pager verfügbar.
 
 ---
 
 ## Wie es funktioniert
 
 1. **Dependency-Check** – fehlende Pakete werden automatisch via `opkg` auf der MMC installiert
-2. **Kismet startet** – passiver Scan aller WiFi-Probe-Requests auf dem konfigurierten Interface
-3. **Datensammlung** – konfigurierbare Scanzeit (Standard: 5 Minuten)
-4. **Python-Analyse** – Persistence-Scoring über vier Zeitfenster (5/10/15/20 Min.)
-5. **Report** – Markdown + KML-Visualisierung (Google Earth) unter `/root/loot/chasing_your_tail/`
+2. **Channel-Hopping** – `wlan1mon` springt automatisch durch alle 2.4GHz + 5GHz Kanäle
+3. **Zwei Scan-Runden** – tcpdump erfasst passive Probe-Requests in PCAP-Dateien
+4. **Python-Analyse** – Persistence-Scoring vergleicht beide Scans miteinander
+5. **Report** – Markdown-Report unter `/root/loot/chasing_your_tail/`
+
+### Warum tcpdump statt Kismet?
+
+Kismet ist in den OpenWrt-Paketquellen des Pineapple Pagers nicht verfügbar. tcpdump ist vorinstalliert, leichtgewichtig und erfasst Probe-Requests genauso zuverlässig. Der eigene PCAP-Parser (`pcap_engine.py`) liest die Captures direkt – ohne externe Python-Bibliotheken.
 
 ---
 
@@ -26,21 +32,21 @@ chasing_your_tail/
 ├── config.example.json           ← Vorlage für config.json
 ├── .gitignore                    ← Schützt API-Keys und Loot vor git push
 ├── python/
-│   ├── chasing_your_tail.py      ← Kern-Engine (Kismet DB → Persistence-Analyse)
+│   ├── pcap_engine.py            ← PCAP-Parser + Persistence-Analyse (stdlib only)
+│   ├── analyze_pcap.py           ← Haupt-Analyse + Report-Generator
+│   ├── chasing_your_tail.py      ← Kern-Engine (Kismet-kompatibel, optional)
 │   ├── surveillance_analyzer.py  ← GPS-Korrelation + KML-Export
 │   └── probe_analyzer.py         ← WiGLE-Integration + Probe-Statistiken
 └── README.md
 ```
 
-**Loot** (Ergebnisse) landet automatisch in:
+**Loot** landet automatisch in:
 
 ```
 /root/loot/chasing_your_tail/
 ├── logs/                    ← Payload-Logs
-├── kismet_data/             ← Kismet .kismet SQLite-DBs
+├── pcap/                    ← tcpdump PCAP-Dateien
 ├── surveillance_reports/    ← Markdown Reports
-├── kml_files/               ← Google Earth KML
-├── reports/                 ← Probe-Analyse Reports
 └── ignore_lists/            ← MAC/SSID Ignorier-Listen (JSON)
 ```
 
@@ -48,37 +54,37 @@ chasing_your_tail/
 
 ## Installation auf dem Pineapple Pager
 
-**1. Payload-Ordner auf den Pager laden:**
-```
-/root/payloads/user/reconnaissance/chasing_your_tail/
+**1. Repo klonen:**
+```bash
+cd /root/payloads/user/reconnaissance/
+git clone https://github.com/tschakram/chasing-your-tail-pager.git chasing_your_tail
+cd chasing_your_tail
 ```
 
-**2. Ausführbar machen:**
+**2. Konfiguration einrichten:**
 ```bash
+cp config.example.json config.json
 chmod +x payload.sh python/*.py
 ```
 
-**3. Konfiguration einrichten:**
-```bash
-cp config.example.json config.json
-```
-Dann `config.json` öffnen und Interface + optionale WiGLE-Keys eintragen.  
 > ⚠️ `config.json` enthält deine API-Keys und wird **nicht** in Git eingecheckt (`.gitignore`).
 
-**4. Über das Pager-Dashboard** unter Payloads starten.
+**3. Starten:**
+```bash
+bash payload.sh
+```
 
 ---
 
-## Abhängigkeiten (automatisch installiert)
+## Abhängigkeiten
 
-| Paket | Zweck | Installation |
-|-------|-------|--------------|
-| `kismet` | WiFi Monitor-Mode Capture | `opkg install -d mmc kismet` |
-| `python3` | Script-Runtime | `opkg install -d mmc python3` |
-| `python3-sqlite3` | Kismet DB lesen | `opkg install -d mmc python3-sqlite3` |
-| `iw` | Interface-Konfiguration | meist vorinstalliert |
+| Paket | Zweck | Status |
+|-------|-------|--------|
+| `tcpdump` | Probe-Request Capture | ✅ Vorinstalliert |
+| `python3` | Script-Runtime | Auto-Install via `opkg` |
+| `iw` | Channel-Hopping | ✅ Vorinstalliert |
 
-> ⚠️ **Wichtig:** Pakete werden immer mit `-d mmc` auf die 4GB MMC-Partition installiert – nicht auf den begrenzten internen Flash-Speicher.
+> ⚠️ Pakete werden mit `-d mmc` auf die 4GB MMC-Partition installiert – nicht auf den internen Flash.
 
 > ⚠️ **Nie** `opkg upgrade` ausführen – das kann den Pager beschädigen!
 
@@ -86,37 +92,61 @@ Dann `config.json` öffnen und Interface + optionale WiGLE-Keys eintragen.
 
 ## Konfiguration
 
-Kopiere zuerst die Vorlage:
 ```bash
 cp config.example.json config.json
 ```
 
-Dann passe `config.json` an:
+Dann `config.json` anpassen:
 
 ```json
 {
   "kismet": {
-    "interface": "wlan1",          ← WiFi-Interface für Monitor-Mode
-    "scan_duration_seconds": 300   ← Scandauer in Sekunden (Standard: 5 Min.)
+    "interface": "wlan1mon",       ← Monitor-Mode Interface
+    "scan_duration_seconds": 120   ← Scandauer pro Runde in Sekunden
   },
   "surveillance": {
     "persistence_threshold": 0.6,  ← Score ab dem gewarnt wird (0.0–1.0)
-    "min_appearances": 3           ← Mindestanzahl Appearances für Wertung
+    "min_appearances": 2           ← Mindestanzahl Appearances
   },
   "wigle": {
-    "enabled": false,    ← true = WiGLE API nutzen (verbraucht Credits!)
-    "api_name": "",      ← WiGLE API Name (von wigle.net)
-    "api_token": ""      ← WiGLE API Token
+    "enabled": false,
+    "api_name": "",
+    "api_token": ""
   }
 }
 ```
 
-### WiGLE API einrichten (optional)
+### WiGLE API (optional)
 
 1. Account auf [wigle.net](https://wigle.net) erstellen
-2. Unter **Account → API Token** einen Token generieren
+2. **Account → API Token** generieren
 3. `api_name` und `api_token` in `config.json` eintragen
 4. `"enabled": true` setzen
+
+---
+
+## Technischer Ablauf
+
+```
+payload.sh
+    │
+    ├── Dependency-Check (python3, tcpdump, iw)
+    ├── Channel-Hopping starten (alle 0.3s, Kanäle 1-11 + 36,40,44,48)
+    ├── Scan-Runde 1 → pcap/scan_*_round1.pcap
+    ├── Scan-Runde 2 → pcap/scan_*_round2.pcap
+    └── Python-Analyse
+            ├── pcap_engine.py  → MACs + SSIDs extrahieren
+            ├── analyze_pcap.py → Persistence-Score berechnen
+            └── Report → surveillance_reports/cyt_report_*.md
+```
+
+### Persistence-Score
+
+| Score | Bedeutung |
+|-------|-----------|
+| 1.00 | Gerät in allen Scan-Runden sichtbar 🔴 |
+| 0.50 | Gerät in der Hälfte der Runden sichtbar 🟡 |
+| < 0.6 | Unauffällig 🟢 |
 
 ---
 
@@ -124,64 +154,59 @@ Dann passe `config.json` an:
 
 | LED | Bedeutung |
 |-----|-----------|
-| 🔵 Cyan Blink | Dependency-Check läuft |
-| 🔵 Blue Blink | Kismet / Python aktiv |
+| 🔵 Cyan Blink | Initialisierung |
+| 🔵 Blue Blink | Scanning läuft |
 | 🟡 Amber Solid | ⚠️ Verdächtige Signale erkannt |
-| 🟢 Green Solid | ✅ Scan abgeschlossen – keine Auffälligkeiten |
-| 🔴 Red Blink | ❌ Fehler (Log unter `/root/loot/chasing_your_tail/logs/` prüfen) |
+| 🟢 Green Solid | ✅ Keine Auffälligkeiten |
+| 🔴 Red Blink | ❌ Fehler |
 
 ---
 
 ## OpenWrt-Kompatibilität
 
-Die Python-Scripts wurden vollständig für OpenWrt (MIPS-Architektur) angepasst:
+| Original CYT-NG | Pager-Anpassung |
+|-----------------|----------------|
+| Kismet | tcpdump + pcap_engine.py |
+| `tkinter` GUI | Entfernt |
+| `cryptography` | Entfernt – Credentials in config.json |
+| `pip` | Ersetzt durch `opkg` |
+| `numpy`/`scipy` | Reines Python (Haversine) |
+| `requests` | `urllib` stdlib Fallback |
 
-| Original | Pager-Anpassung |
-|----------|----------------|
-| `tkinter` GUI | Entfernt – reine Kommandozeile |
-| `cryptography`-Paket | Entfernt – Credentials in `config.json` |
-| `pip` / `pip3` | Ersetzt durch `opkg` |
-| `numpy` / `scipy` | Ersetzt durch reines Python (Haversine) |
-| `requests` | `urllib` (stdlib) als Fallback |
-| `sqlite3` (extern) | stdlib-Version (immer verfügbar) |
+---
+
+## Getestet auf
+
+- WiFi Pineapple Pager (OpenWrt 24.10.1, mipsel_24kc)
+- Python 3.11.14
+- tcpdump 4.99.5
 
 ---
 
 ## Ignore-Listen
 
-Bekannte eigene Geräte können ignoriert werden um False Positives zu vermeiden.  
-Die Listen werden automatisch unter `/root/loot/chasing_your_tail/ignore_lists/` angelegt.
+Eigene Geräte ignorieren um False Positives zu vermeiden:
 
-**MAC-Adressen ignorieren** (`mac_list.json`):
+**`ignore_lists/mac_list.json`:**
 ```json
-{
-  "ignore_macs": [
-    "AA:BB:CC:DD:EE:FF",
-    "11:22:33:44:55:66"
-  ]
-}
+{"ignore_macs": ["AA:BB:CC:DD:EE:FF"]}
 ```
 
-**SSIDs ignorieren** (`ssid_list.json`):
+**`ignore_lists/ssid_list.json`:**
 ```json
-{
-  "ignore_ssids": [
-    "MeinHeimnetzwerk",
-    "Büro-WLAN"
-  ]
-}
+{"ignore_ssids": ["MeinHeimnetzwerk"]}
 ```
 
 ---
 
 ## Rechtliches
 
-Dieses Tool analysiert ausschließlich **öffentlich gesendete Funksignale** (Probe Requests im offenen ISM-Band 2.4/5 GHz). Es werden keine Verbindungen aufgebaut, keine Daten abgefangen und keine Geräte aktiv kontaktiert. Nutzung auf eigene Verantwortung im Rahmen der geltenden Gesetze.
+Analysiert ausschließlich **öffentlich gesendete Funksignale** (Probe Requests im offenen ISM-Band). Keine Verbindungen, keine abgefangenen Daten, keine aktive Kontaktierung von Geräten. Nutzung auf eigene Verantwortung.
 
 ---
 
 ## Credits
 
 - Original: [azmatt/chasing_your_tail](https://github.com/azmatt/chasing_your_tail)
-- NG-Version: [ArgeliusLabs/Chasing-Your-Tail-NG](https://github.com/ArgeliusLabs/Chasing-Your-Tail-NG) – MIT Lizenz
+- NG-Version: [ArgeliusLabs/Chasing-Your-Tail-NG](https://github.com/ArgeliusLabs/Chasing-Your-Tail-NG) – MIT
 - Pineapple Pager Port: [tschakram](https://github.com/tschakram)
