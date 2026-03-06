@@ -357,6 +357,23 @@ LOG ""
 # ============================================================
 # WARTEN AUF BEENDEN
 # ============================================================
+# Report anzeigen?
+RESP=$(CONFIRMATION_DIALOG "Report anzeigen?")
+if [ "$RESP" = "0" ]; then
+    if [ -f "$LATEST_REPORT" ]; then
+        LOG ""
+        LOG "=============================="
+        LOG "         REPORT"
+        LOG "=============================="
+        while IFS= read -r line; do
+            # Markdown-Formatierung vereinfachen
+            line=$(echo "$line" | sed 's/^#+\s*//' | sed 's/\*\*//g' | sed 's/`//g')
+            [ -n "$line" ] && LOG "$line"
+        done < "$LATEST_REPORT"
+        LOG "=============================="
+    fi
+fi
+
 LOG "Drücke ROT zum Beenden"
 WAIT_FOR_BUTTON_PRESS "red"
 LED off
