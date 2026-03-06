@@ -358,8 +358,14 @@ LOG ""
 # WARTEN AUF BEENDEN
 # ============================================================
 # Report anzeigen?
-RESP=$(CONFIRMATION_DIALOG "Report anzeigen?")
-if [ "$RESP" = "0" ]; then
+CONFIRMATION_DIALOG "Report anzeigen?"
+case $? in
+    $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+        SHOW_REPORT=false ;;
+    *)
+        SHOW_REPORT=true ;;
+esac
+if [ "$SHOW_REPORT" = true ]; then
     if [ -f "$LATEST_REPORT" ]; then
         LOG ""
         LOG "=============================="
