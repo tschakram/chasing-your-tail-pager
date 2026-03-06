@@ -153,30 +153,9 @@ PCAP_FILES=()
 BT_SCAN_FILES=()
 
 cleanup() {
-    LOG yellow "Stoppe alle Prozesse..."
     PINEAPPLE_HOPPING_STOP 2>/dev/null
     WIFI_PCAP_STOP 2>/dev/null
-    
-    # Analyse auch bei manuellem Stop wenn PCAPsvorhanden
-    if [ ${#PCAP_FILES[@]} -gt 0 ]; then
-        LOG yellow "Analysiere vorhandene Daten..."
-        PCAP_LIST=$(IFS=","; echo "${PCAP_FILES[*]}")
-        python3 "$PYTHON_DIR/analyze_pcap.py"             --pcaps "$PCAP_LIST"             --config "$CONFIG_FILE"             --output-dir "$REPORT_DIR" 2>/dev/null
-        
-        sleep 2
-    LATEST_REPORT=$(ls -t "$REPORT_DIR"/*.md 2>/dev/null | head -1)
-        if [ -f "$LATEST_REPORT" ]; then
-            SUSPICIOUS=$(grep "Verdächtig" "$LATEST_REPORT" | grep -o "[0-9]*" | head -1)
-            if [ "${SUSPICIOUS:-0}" -gt 0 ]; then
-                LOG red "⚠ $SUSPICIOUS verdächtige Geräte!"
-                VIBRATE 3
-            else
-                LOG green "✅ Keine Auffälligkeiten"
-            fi
-        fi
-    fi
     LED off
-    exit 0
 }
 trap cleanup EXIT INT TERM
 
