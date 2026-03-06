@@ -371,11 +371,22 @@ if [ "$SHOW_REPORT" = true ]; then
         LOG "=============================="
         LOG "         REPORT"
         LOG "=============================="
-        while IFS= read -r line; do
-            # Markdown-Formatierung vereinfachen
-            line=$(echo "$line" | sed 's/^#+\s*//' | sed 's/\*\*//g' | sed 's/`//g')
-            [ -n "$line" ] && LOG "$line"
-        done < "$LATEST_REPORT"
+        # Nur relevante Zeilen anzeigen - keine Tabellen
+        grep "Datum:\|Geräte gesamt:\|Verdächtig:\|Ignoriert:\|WARNING\|Keine verdäch"             "$LATEST_REPORT" | while IFS= read -r line; do
+            line=$(echo "$line" | sed "s/\*\*//g")
+            LOG "$line"
+        done
+        LOG ""
+        LOG "Verdächtige MACs:"
+        grep "^| 🔴" "$LATEST_REPORT" | while IFS= read -r line; do
+            # Format: MAC | Score | Appearances
+            MAC=$(echo "$line" | awk -F"|" "{print \$2}" | tr -d " \`")
+            SCORE=$(echo "$line" | awk -F"|" "{print \$3}" | tr -d " ")
+            APP=$(echo "$line" | awk -F"|" "{print \$4}" | tr -d " ")
+            LOG "  $MAC"
+            LOG "  Score:$SCORE Seen:$APP"
+            LOG "  --------------------"
+        done
         LOG "=============================="
     fi
 fi
