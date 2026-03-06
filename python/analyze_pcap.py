@@ -7,6 +7,7 @@ import os, sys, json, logging, argparse
 from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pcap_engine import read_pcap_probes, analyze_persistence
+from oui_lookup import load_oui_db, lookup
 
 log = logging.getLogger('CYT-Analyze')
 
@@ -63,7 +64,7 @@ def filter_scans(scans, ignore_macs, ignore_ssids):
 
     return filtered
 
-def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None):
+def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None):
     os.makedirs(output_dir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(output_dir, f'cyt_report_{ts}.md')
@@ -79,25 +80,26 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None):
 
         if suspicious:
             f.write('## ⚠️ WARNING - Verdächtige Geräte\n\n')
-            f.write('| MAC | Score | Appearances | SSIDs |\n')
-            f.write('|-----|-------|-------------|-------|\n')
+            f.write('| MAC | Hersteller | Score | Appearances |\n')
+            f.write('|-----|------------|-------|-------------|\n')
             for mac, d in sorted(suspicious.items(),
                                  key=lambda x: x[1]['persistence_score'],
                                  reverse=True):
-                ssids = ', '.join(d['ssids']) or '-'
-                f.write(f'| `{mac}` | {d["persistence_score"]:.2f} | '
-                        f'{d["appearances"]} | {ssids} |\n')
+                vendor = lookup(mac, oui_db) if oui_db else '?'
+                f.write(f'| `{mac}` | {vendor} | {d["persistence_score"]:.2f} | '
+                        f'{d["appearances"]} |\n')
         else:
             f.write('## ✅ Keine verdächtigen Geräte erkannt\n\n')
 
         f.write('\n## Alle Geräte\n\n')
-        f.write('| MAC | Score | Appearances | Fenster |\n')
-        f.write('|-----|-------|-------------|--------|\n')
+        f.write('| MAC | Hersteller | Score | Appearances | Fenster |\n')
+        f.write('|-----|------------|-------|-------------|--------|\n')
         for mac, d in sorted(scored.items(),
                              key=lambda x: x[1]['persistence_score'],
                              reverse=True):
             flag = '🔴' if d['suspicious'] else '🟢'
-            f.write(f'| {flag} `{mac}` | {d["persistence_score"]:.2f} | '
+            vendor = lookup(mac, oui_db) if oui_db else '?'
+            f.write(f'| {flag} `{mac}` | {vendor} | {d["persistence_score"]:.2f} | '
                     f'{d["appearances"]} | '
                     f'{d["present_in_windows"]}/{d["total_windows"]} |\n')
 
@@ -157,6 +159,9 @@ def main():
     min_app = args.min_appearances or \
         config.get('surveillance', {}).get('min_appearances', 2)
 
+    # OUI-Datenbank laden
+    oui_db = load_oui_db()
+
     # BT-Scans laden
     bt_devices_all = {}
     if args.bt_scans:
@@ -187,7 +192,7 @@ def main():
     )
 
     log.info(f'Geräte gesamt: {len(scored)} | Verdächtig: {len(suspicious)}')
-    save_report(scored, suspicious, args.output_dir, ignore_macs, bt_devices_all)
+    save_report(scored, suspicious, args.output_dir, ignore_macs, bt_devices_all, oui_db)
     sys.exit(2 if suspicious else 0)
 
 if __name__ == '__main__':

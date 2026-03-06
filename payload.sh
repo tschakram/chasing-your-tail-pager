@@ -379,11 +379,13 @@ if [ "$SHOW_REPORT" = true ]; then
         LOG ""
         LOG "Verdächtige MACs:"
         grep "^| 🔴" "$LATEST_REPORT" | while IFS= read -r line; do
-            # Format: MAC | Score | Appearances
+            # Format: MAC | Hersteller | Score | Appearances
             MAC=$(echo "$line" | awk -F"|" "{print \$2}" | tr -d " \`")
-            SCORE=$(echo "$line" | awk -F"|" "{print \$3}" | tr -d " ")
-            APP=$(echo "$line" | awk -F"|" "{print \$4}" | tr -d " ")
+            VENDOR=$(echo "$line" | awk -F"|" "{print \$3}" | tr -d " ")
+            SCORE=$(echo "$line" | awk -F"|" "{print \$4}" | tr -d " ")
+            APP=$(echo "$line" | awk -F"|" "{print \$5}" | tr -d " ")
             LOG "  $MAC"
+            LOG "  $VENDOR"
             LOG "  Score:$SCORE Seen:$APP"
             LOG "  --------------------"
         done
