@@ -283,7 +283,14 @@ LOG green "✓ Alle Scans abgeschlossen"
 LED amber solid
 SPINNER_ID=$(START_SPINNER "Analysiere Daten...")
 
-PCAP_LIST=$(ls -t "$PCAP_DIR"/scan_*.pcap 2>/dev/null | tr "\n" "," | sed "s/,$//")
+# Nur PCAPe vom aktuellen Lauf (nach SCAN_START_TIME)
+PCAP_LIST=""
+for f in $(ls -t "$PCAP_DIR"/scan_*.pcap 2>/dev/null); do
+    FILE_TIME=$(date -r "$f" +%s 2>/dev/null)
+    if [ "$FILE_TIME" -ge "$SCAN_START_TIME" ]; then
+        PCAP_LIST="${PCAP_LIST:+$PCAP_LIST,}$f"
+    fi
+done
 
 BT_LIST=$(ls -t "$LOOT_DIR"/bt_scan_*.json 2>/dev/null | grep -v "test" | tr "\n" "," | sed "s/,$//"  )
 python3 "$PYTHON_DIR/analyze_pcap.py" \
