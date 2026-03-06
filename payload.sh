@@ -111,6 +111,7 @@ LOG green "▶ Scan gestartet!"
 # CLEANUP HANDLER
 # ============================================================
 PCAP_FILES=()
+BT_SCAN_FILES=()
 
 cleanup() {
     LOG yellow "Stoppe alle Prozesse..."
@@ -171,10 +172,16 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
         echo "$TS,$GPS_LAT,$GPS_LON,$GPS_ALT" >> "$LOOT_DIR/gps_track.csv"
     fi
 
-    # PCAP Capture starten
+    # PCAP Capture + BT-Scan parallel starten
     LED blue blink
     WIFI_PCAP_START
-    LOG "🔍 Capture läuft..."
+
+    # BT-Scan im Hintergrund
+    BT_FILE="$LOOT_DIR/bt_scan_${TS}_round${ROUND}.json"
+    python3 "$PYTHON_DIR/bt_scanner.py"         --duration "$SCAN_DURATION"         --output "$BT_FILE" &
+    BT_PID=$!
+
+    LOG "🔍 WiFi + BT Capture läuft..."
     LOG "   Dauer: ${SCAN_DURATION}s"
     LOG ""
 
@@ -193,6 +200,9 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
 
     # PCAP stoppen und sichern
     WIFI_PCAP_STOP
+    # BT-Scan abwarten
+    wait $BT_PID 2>/dev/null
+    [ -f "$BT_FILE" ] && BT_SCAN_FILES+=("$BT_FILE") &&         LOG green "✓ BT-Scan: $(python3 -c "import json; d=json.load(open('$BT_FILE')); print(len(d.get('bt_devices',{})))" 2>/dev/null || echo '?') Geräte"
     sleep 1
 
     # PCAP-Datei von WIFI_PCAP_START holen
@@ -247,12 +257,14 @@ SPINNER_ID=$(START_SPINNER "Analysiere Daten...")
 
 PCAP_LIST=$(IFS=','; echo "${PCAP_FILES[*]}")
 
+BT_LIST=$(IFS=','; echo "${BT_SCAN_FILES[*]}")
 python3 "$PYTHON_DIR/analyze_pcap.py" \
     --pcaps "$PCAP_LIST" \
     --config "$CONFIG_FILE" \
     --output-dir "$REPORT_DIR" \
     --threshold "$PERSISTENCE_THRESHOLD" \
-    --min-appearances "$MIN_APPEARANCES"
+    --min-appearances "$MIN_APPEARANCES" \
+    ${BT_LIST:+--bt-scans "$BT_LIST"}
 
 RESULT=$?
 STOP_SPINNER "$SPINNER_ID"
