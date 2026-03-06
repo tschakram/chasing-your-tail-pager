@@ -280,13 +280,6 @@ LOG green "✓ Alle Scans abgeschlossen"
 # ============================================================
 # PYTHON ANALYSE
 # ============================================================
-echo "DEBUG PCAP_FILES: ${#PCAP_FILES[@]} Einträge: ${PCAP_FILES[*]}"
-if [ ${#PCAP_FILES[@]} -eq 0 ]; then
-    LOG red "Keine PCAP-Dateien gefunden!"
-    LED red
-    sleep 3
-    exit 1
-fi
 
 LED amber solid
 SPINNER_ID=$(START_SPINNER "Analysiere Daten...")
