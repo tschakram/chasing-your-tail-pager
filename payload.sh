@@ -62,10 +62,10 @@ LOG ""
 LOG "0 = Nur WiFi"
 LOG "1 = WiFi + GPS"
 LOG "2 = WiFi + Bluetooth"
-LOG "3 = WiFi + GPS + Bluetooth"
+LOG "3 = Alle Module"
 LOG ""
-
-SCAN_MODE=$(NUMBER_PICKER "Scan-Modus:" 0)
+sleep 5
+SCAN_MODE=$(NUMBER_PICKER "Scan-Modus (0-3):" 0)
 case $? in
     $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
         SCAN_MODE=0
@@ -250,16 +250,11 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
     fi
     sleep 1
 
-    # PCAP-Datei von WIFI_PCAP_START holen
+    # PCAP-Datei von WIFI_PCAP_START holen und in unseren Ordner kopieren
     sleep 2
     LATEST_PCAP=$(ls -t /root/loot/pcap/*.pcap 2>/dev/null | head -1)
-    # Kopie in unserem Ordner anlegen
     if [ -n "$LATEST_PCAP" ]; then
         cp "$LATEST_PCAP" "$PCAP_FILE"
-        LATEST_PCAP="$PCAP_FILE"
-    fi
-    if [ -n "$LATEST_PCAP" ]; then
-        mv "$LATEST_PCAP" "$PCAP_FILE"
         PCAP_FILES+=("$PCAP_FILE")
         PROBE_COUNT=$(tcpdump -r "$PCAP_FILE" 2>/dev/null | wc -l)
         LOG green "✓ Runde $ROUND: $PROBE_COUNT Probes"
