@@ -163,7 +163,8 @@ cleanup() {
         PCAP_LIST=$(IFS=","; echo "${PCAP_FILES[*]}")
         python3 "$PYTHON_DIR/analyze_pcap.py"             --pcaps "$PCAP_LIST"             --config "$CONFIG_FILE"             --output-dir "$REPORT_DIR" 2>/dev/null
         
-        LATEST_REPORT=$(ls -t "$REPORT_DIR"/*.md 2>/dev/null | head -1)
+        sleep 1
+    LATEST_REPORT=$(ls -t "$REPORT_DIR"/*.md 2>/dev/null | head -1)
         if [ -f "$LATEST_REPORT" ]; then
             SUSPICIOUS=$(grep "Verdächtig" "$LATEST_REPORT" | grep -o "[0-9]*" | head -1)
             if [ "${SUSPICIOUS:-0}" -gt 0 ]; then
@@ -224,7 +225,11 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
         BT_PID=$!
     fi
 
-    LOG "🔍 WiFi + BT Capture läuft..."
+    if [ "$USE_BT" = true ]; then
+        LOG "🔍 WiFi + BT Capture läuft..."
+    else
+        LOG "🔍 WiFi Capture läuft..."
+    fi
     LOG "   Dauer: ${SCAN_DURATION}s"
     LOG ""
 
