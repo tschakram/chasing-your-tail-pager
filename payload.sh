@@ -27,7 +27,7 @@ mkdir -p "$PCAP_DIR" "$REPORT_DIR"
 
 LOG "╔══════════════════════════╗"
 LOG "║  Chasing Your Tail NG    ║"
-LOG "║      v3.0                ║"
+LOG "║      v4.0                ║"
 LOG "╚══════════════════════════╝"
 LOG ""
 LOG "Surveillance Detection"
@@ -303,7 +303,6 @@ sleep 2
 # ERGEBNIS ANZEIGEN
 # ============================================================
 LATEST_REPORT=$(ls -t "$REPORT_DIR"/*.md 2>/dev/null | head -1)
-LOG "Debug: $LATEST_REPORT"
 
 LOG ""
 LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
