@@ -202,11 +202,10 @@ def save_gps_track(gps_data, loot_dir):
                 f'{gps_data["speed"]},'
                 f'{gps_data["fix"]}\n')
 
-def save_bt_scan(bt_devices, correlated, gps_data, loot_dir):
+def save_bt_scan(bt_devices, correlated, gps_data, output_path):
     """Speichert BT-Scan-Ergebnisse als JSON."""
-    os.makedirs(loot_dir, exist_ok=True)
-    ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
-    path = os.path.join(loot_dir, f'bt_scan_{ts}.json')
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    path = output_path
 
     with open(path, 'w') as f:
         json.dump({
@@ -223,29 +222,40 @@ def save_bt_scan(bt_devices, correlated, gps_data, loot_dir):
 # MAIN (Test)
 # ============================================================
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--duration', type=int, default=15)
+    parser.add_argument('--output',   default=None)
+    parser.add_argument('--loot-dir', default='/root/loot/chasing_your_tail')
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=logging.INFO,
         format='[%(asctime)s] %(levelname)s %(message)s'
     )
 
-    loot_dir = '/root/loot/chasing_your_tail'
-
     # GPS
     gps = get_gps_position()
     if gps['fix']:
         log.info(f'GPS: {gps["lat"]}, {gps["lon"]}')
-        save_gps_track(gps, loot_dir)
+        save_gps_track(gps, args.loot_dir)
     else:
         log.info('Kein GPS-Fix')
 
     # BT scannen
-    bt_devices = scan_bluetooth(duration=15)
+    bt_devices = scan_bluetooth(duration=args.duration)
 
-    # Korrelation (ohne WiFi-Daten im Test)
+    # Korrelation
     correlated = correlate_wifi_bt({}, bt_devices)
 
     # Speichern
-    save_bt_scan(bt_devices, correlated, gps, loot_dir)
+    if args.output:
+        out = args.output  # direkt als Dateipfad verwenden
+    else:
+        os.makedirs(args.loot_dir, exist_ok=True)
+        out = os.path.join(args.loot_dir,
+            f'bt_scan_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+    save_bt_scan(bt_devices, correlated, gps, out)
 
     print(f'\nGefunden: {len(bt_devices)} BT-Geräte')
     for mac, data in bt_devices.items():
