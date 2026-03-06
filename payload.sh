@@ -291,9 +291,9 @@ fi
 LED amber solid
 SPINNER_ID=$(START_SPINNER "Analysiere Daten...")
 
-PCAP_LIST=$(IFS=','; echo "${PCAP_FILES[*]}")
+PCAP_LIST=$(ls -t "$PCAP_DIR"/scan_*.pcap 2>/dev/null | tr "\n" "," | sed "s/,$//")
 
-BT_LIST=$(IFS=','; echo "${BT_SCAN_FILES[*]}")
+BT_LIST=$(ls -t "$LOOT_DIR"/bt_scan_*.json 2>/dev/null | tr "\n" "," | sed "s/,$//")
 python3 "$PYTHON_DIR/analyze_pcap.py" \
     --pcaps "$PCAP_LIST" \
     --config "$CONFIG_FILE" \
