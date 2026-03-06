@@ -9,8 +9,8 @@
 # ============================================================
 # CONFIGURATION
 # ============================================================
-SCAN_ROUNDS=2
-SCAN_DURATION=120
+SCAN_ROUNDS=1
+SCAN_DURATION=30
 PERSISTENCE_THRESHOLD=0.6
 MIN_APPEARANCES=2
 
@@ -117,7 +117,7 @@ LOG "Scan-Konfiguration:"
 LOG ""
 
 # Anzahl Runden wählen
-SCAN_ROUNDS=$(NUMBER_PICKER "Scan-Runden:" 2)
+SCAN_ROUNDS=$(NUMBER_PICKER "Scan-Runden:" 1)
 case $? in
     $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
         SCAN_ROUNDS=2
@@ -126,7 +126,7 @@ esac
 LOG "Runden: $SCAN_ROUNDS"
 
 # Scan-Dauer wählen
-SCAN_DURATION=$(NUMBER_PICKER "Dauer pro Runde (Sek):" 120)
+SCAN_DURATION=$(NUMBER_PICKER "Dauer pro Runde (Sek):" 30)
 case $? in
     $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
         SCAN_DURATION=120
@@ -304,11 +304,13 @@ python3 "$PYTHON_DIR/analyze_pcap.py" \
 
 RESULT=$?
 STOP_SPINNER "$SPINNER_ID"
+sleep 2
 
 # ============================================================
 # ERGEBNIS ANZEIGEN
 # ============================================================
 LATEST_REPORT=$(ls -t "$REPORT_DIR"/*.md 2>/dev/null | head -1)
+LOG "Debug: $LATEST_REPORT"
 
 LOG ""
 LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
