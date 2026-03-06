@@ -382,10 +382,11 @@ if [ "$SHOW_REPORT" = true ]; then
             # Format: MAC | Hersteller | Score | Appearances
             MAC=$(echo "$line" | awk -F"|" "{print \$2}" | tr -d " \`")
             VENDOR=$(echo "$line" | awk -F"|" "{print \$3}" | tr -d " ")
-            SCORE=$(echo "$line" | awk -F"|" "{print \$4}" | tr -d " ")
-            APP=$(echo "$line" | awk -F"|" "{print \$5}" | tr -d " ")
+            MTYPE=$(echo "$line" | awk -F"|" "{print \$4}" | tr -d " ")
+            SCORE=$(echo "$line" | awk -F"|" "{print \$5}" | tr -d " ")
+            APP=$(echo "$line" | awk -F"|" "{print \$6}" | tr -d " ")
             LOG "  $MAC"
-            LOG "  $VENDOR"
+            LOG "  $VENDOR ($MTYPE)"
             LOG "  Score:$SCORE Seen:$APP"
             LOG "  --------------------"
         done
