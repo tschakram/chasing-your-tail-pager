@@ -191,6 +191,9 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
         echo "$TS,$GPS_LAT,$GPS_LON,$GPS_ALT" >> "$LOOT_DIR/gps_track.csv"
     fi
 
+    # Zeitstempel vor Capture merken
+    PCAP_START_TIME=$(date +%s)
+
     # PCAP Capture + BT-Scan parallel starten
     LED blue blink
     WIFI_PCAP_START
@@ -236,14 +239,23 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
 
     # PCAP-Datei von WIFI_PCAP_START holen und in unseren Ordner kopieren
     sleep 2
-    LATEST_PCAP=$(ls -t /root/loot/pcap/*.pcap 2>/dev/null | head -1)
+    # Nur PCAP nehmen die während diesem Scan erstellt wurde
+    LATEST_PCAP=""
+    for f in $(ls -t /root/loot/pcap/*.pcap 2>/dev/null); do
+        FILE_TIME=$(date -r "$f" +%s 2>/dev/null)
+        if [ "$FILE_TIME" -ge "$PCAP_START_TIME" ]; then
+            LATEST_PCAP="$f"
+            break
+        fi
+    done
+
     if [ -n "$LATEST_PCAP" ]; then
         cp "$LATEST_PCAP" "$PCAP_FILE"
         PCAP_FILES+=("$PCAP_FILE")
         PROBE_COUNT=$(tcpdump -r "$PCAP_FILE" 2>/dev/null | wc -l)
         LOG green "✓ Runde $ROUND: $PROBE_COUNT Probes"
     else
-        LOG yellow "⚠ Keine PCAP-Datei gefunden"
+        LOG yellow "⚠ Keine neue PCAP gefunden"
     fi
 
     # GPS nach Runde aktualisieren
