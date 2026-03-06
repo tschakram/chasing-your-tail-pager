@@ -52,23 +52,62 @@ LOG green "✓ Abhängigkeiten OK"
 sleep 1
 
 # ============================================================
-# GPS CHECK
+# SCAN-MODUS AUSWÄHLEN
 # ============================================================
 LOG ""
-LOG "Prüfe GPS..."
-GPS_RAW=$(GPS_GET)
-GPS_LAT=$(echo "$GPS_RAW" | awk '{print $1}')
-GPS_LON=$(echo "$GPS_RAW" | awk '{print $2}')
+LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+LOG blue "     Scan-Module"
+LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+LOG ""
+LOG "0 = Nur WiFi"
+LOG "1 = WiFi + GPS"
+LOG "2 = WiFi + Bluetooth"
+LOG "3 = WiFi + GPS + Bluetooth"
+LOG ""
 
-if [ "$GPS_LAT" = "0" ] || [ -z "$GPS_LAT" ]; then
-    LOG yellow "⚠ Kein GPS-Fix"
-    LOG "Weiter ohne GPS..."
-    GPS_AVAILABLE=false
-else
-    LOG green "✓ GPS-Fix: $GPS_LAT, $GPS_LON"
-    GPS_AVAILABLE=true
+SCAN_MODE=$(NUMBER_PICKER "Scan-Modus:" 0)
+case $? in
+    $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+        SCAN_MODE=0
+        ;;
+esac
+
+# Module aktivieren
+USE_GPS=false
+USE_BT=false
+case "$SCAN_MODE" in
+    1) USE_GPS=true ;;
+    2) USE_BT=true ;;
+    3) USE_GPS=true; USE_BT=true ;;
+esac
+
+LOG ""
+LOG "Module:"
+[ "$USE_GPS" = true ] && LOG green "  ✓ GPS aktiv" || LOG "  ✗ GPS deaktiviert"
+[ "$USE_BT"  = true ] && LOG green "  ✓ Bluetooth aktiv" || LOG "  ✗ Bluetooth deaktiviert"
+LOG green "  ✓ WiFi aktiv"
+sleep 2
+
+# ============================================================
+# GPS CHECK
+# ============================================================
+GPS_AVAILABLE=false
+if [ "$USE_GPS" = true ]; then
+    LOG ""
+    LOG "Prüfe GPS..."
+    GPS_RAW=$(GPS_GET)
+    GPS_LAT=$(echo "$GPS_RAW" | awk '{print $1}')
+    GPS_LON=$(echo "$GPS_RAW" | awk '{print $2}')
+
+    if [ "$GPS_LAT" = "0" ] || [ -z "$GPS_LAT" ]; then
+        LOG yellow "⚠ Kein GPS-Fix"
+        LOG "Weiter ohne GPS..."
+    else
+        LOG green "✓ GPS-Fix: $GPS_LAT, $GPS_LON"
+        GPS_AVAILABLE=true
+    fi
+    sleep 1
 fi
-sleep 1
 
 # ============================================================
 # SCAN KONFIGURATION
@@ -176,10 +215,14 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
     LED blue blink
     WIFI_PCAP_START
 
-    # BT-Scan im Hintergrund
-    BT_FILE="$LOOT_DIR/bt_scan_${TS}_round${ROUND}.json"
-    python3 "$PYTHON_DIR/bt_scanner.py"         --duration "$SCAN_DURATION"         --output "$BT_FILE" &
-    BT_PID=$!
+    # BT-Scan im Hintergrund (wenn aktiviert)
+    BT_PID=""
+    BT_FILE=""
+    if [ "$USE_BT" = true ]; then
+        BT_FILE="$LOOT_DIR/bt_scan_${TS}_round${ROUND}.json"
+        python3 "$PYTHON_DIR/bt_scanner.py"             --duration "$SCAN_DURATION"             --output "$BT_FILE" &
+        BT_PID=$!
+    fi
 
     LOG "🔍 WiFi + BT Capture läuft..."
     LOG "   Dauer: ${SCAN_DURATION}s"
@@ -201,8 +244,10 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
     # PCAP stoppen und sichern
     WIFI_PCAP_STOP
     # BT-Scan abwarten
-    wait $BT_PID 2>/dev/null
-    [ -f "$BT_FILE" ] && BT_SCAN_FILES+=("$BT_FILE") &&         LOG green "✓ BT-Scan: $(python3 -c "import json; d=json.load(open('$BT_FILE')); print(len(d.get('bt_devices',{})))" 2>/dev/null || echo '?') Geräte"
+    if [ -n "$BT_PID" ]; then
+        wait $BT_PID 2>/dev/null
+        [ -f "$BT_FILE" ] && BT_SCAN_FILES+=("$BT_FILE") &&             LOG green "✓ BT-Scan: $(python3 -c "import json; d=json.load(open('$BT_FILE')); print(len(d.get('bt_devices',{})))" 2>/dev/null || echo '?') Geräte"
+    fi
     sleep 1
 
     # PCAP-Datei von WIFI_PCAP_START holen
