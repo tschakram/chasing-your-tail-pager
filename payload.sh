@@ -279,6 +279,7 @@ LOG green "✓ Alle Scans abgeschlossen"
 # ============================================================
 # PYTHON ANALYSE
 # ============================================================
+echo "DEBUG PCAP_FILES: ${#PCAP_FILES[@]} Einträge: ${PCAP_FILES[*]}"
 if [ ${#PCAP_FILES[@]} -eq 0 ]; then
     LOG red "Keine PCAP-Dateien gefunden!"
     LED red
