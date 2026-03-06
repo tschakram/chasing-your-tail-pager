@@ -151,6 +151,7 @@ LOG green "▶ Scan gestartet!"
 # ============================================================
 PCAP_FILES=()
 BT_SCAN_FILES=()
+SCAN_START_TIME=$(date +%s)
 
 cleanup() {
     PINEAPPLE_HOPPING_STOP 2>/dev/null
