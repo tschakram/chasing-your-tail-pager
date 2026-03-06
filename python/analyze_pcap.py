@@ -9,6 +9,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pcap_engine import read_pcap_probes, analyze_persistence
 from oui_lookup import load_oui_db, lookup
 
+def is_locally_administered(mac):
+    """Prüft ob MAC lokal administriert (gespooft/randomisiert) ist."""
+    try:
+        first_byte = int(mac.split(':')[0], 16)
+        return bool(first_byte & 0x02)
+    except Exception:
+        return False
+
+def mac_type(mac):
+    """Gibt MAC-Typ zurück: 'lokal (gespooft?)' oder 'global'"""
+    return '⚠ lokal/gespooft' if is_locally_administered(mac) else 'global'
+
 log = logging.getLogger('CYT-Analyze')
 
 def load_ignore_lists(config):
@@ -80,26 +92,28 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
 
         if suspicious:
             f.write('## ⚠️ WARNING - Verdächtige Geräte\n\n')
-            f.write('| MAC | Hersteller | Score | Appearances |\n')
-            f.write('|-----|------------|-------|-------------|\n')
+            f.write('| MAC | Hersteller | Typ | Score | Appearances |\n')
+            f.write('|-----|------------|-----|-------|-------------|\n')
             for mac, d in sorted(suspicious.items(),
                                  key=lambda x: x[1]['persistence_score'],
                                  reverse=True):
                 vendor = lookup(mac, oui_db) if oui_db else '?'
-                f.write(f'| `{mac}` | {vendor} | {d["persistence_score"]:.2f} | '
+                mtype  = mac_type(mac)
+                f.write(f'| `{mac}` | {vendor} | {mtype} | {d["persistence_score"]:.2f} | '
                         f'{d["appearances"]} |\n')
         else:
             f.write('## ✅ Keine verdächtigen Geräte erkannt\n\n')
 
         f.write('\n## Alle Geräte\n\n')
-        f.write('| MAC | Hersteller | Score | Appearances | Fenster |\n')
-        f.write('|-----|------------|-------|-------------|--------|\n')
+        f.write('| MAC | Hersteller | Typ | Score | Appearances | Fenster |\n')
+        f.write('|-----|------------|-----|-------|-------------|--------|\n')
         for mac, d in sorted(scored.items(),
                              key=lambda x: x[1]['persistence_score'],
                              reverse=True):
             flag = '🔴' if d['suspicious'] else '🟢'
             vendor = lookup(mac, oui_db) if oui_db else '?'
-            f.write(f'| {flag} `{mac}` | {vendor} | {d["persistence_score"]:.2f} | '
+            mtype  = mac_type(mac)
+            f.write(f'| {flag} `{mac}` | {vendor} | {mtype} | {d["persistence_score"]:.2f} | '
                     f'{d["appearances"]} | '
                     f'{d["present_in_windows"]}/{d["total_windows"]} |\n')
 
