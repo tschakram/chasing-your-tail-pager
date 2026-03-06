@@ -163,7 +163,7 @@ cleanup() {
         PCAP_LIST=$(IFS=","; echo "${PCAP_FILES[*]}")
         python3 "$PYTHON_DIR/analyze_pcap.py"             --pcaps "$PCAP_LIST"             --config "$CONFIG_FILE"             --output-dir "$REPORT_DIR" 2>/dev/null
         
-        sleep 1
+        sleep 2
     LATEST_REPORT=$(ls -t "$REPORT_DIR"/*.md 2>/dev/null | head -1)
         if [ -f "$LATEST_REPORT" ]; then
             SUSPICIOUS=$(grep "Verdächtig" "$LATEST_REPORT" | grep -o "[0-9]*" | head -1)
