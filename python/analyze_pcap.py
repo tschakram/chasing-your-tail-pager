@@ -8,6 +8,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pcap_engine import read_pcap_probes, analyze_persistence
 from oui_lookup import load_oui_db, lookup
+from wigle_lookup import WiGLEClient, lookup_device, format_wigle_section
 
 def is_locally_administered(mac):
     """Prüft ob MAC lokal administriert (gespooft/randomisiert) ist."""
@@ -76,7 +77,7 @@ def filter_scans(scans, ignore_macs, ignore_ssids):
 
     return filtered
 
-def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None):
+def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None, wigle_client=None):
     os.makedirs(output_dir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(output_dir, f'cyt_report_{ts}.md')
@@ -101,6 +102,15 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
                 mtype  = mac_type(mac)
                 f.write(f'| `{mac}` | {vendor} | {mtype} | {d["persistence_score"]:.2f} | '
                         f'{d["appearances"]} |\n')
+                # WiGLE Lookup
+                if wigle_client:
+                    ssids = [s for s in d.get('ssids', []) if s and len(s) > 2]
+                    wigle = lookup_device(mac, ssids, client=wigle_client)
+                    wigle_text = format_wigle_section(wigle)
+                    if wigle_text.strip():
+                        f.write(wigle_text + '\n')
+                    else:
+                        f.write('\n**WiGLE:** Keine Treffer (Wildcard Probes)\n')
         else:
             f.write('## ✅ Keine verdächtigen Geräte erkannt\n\n')
 
@@ -176,6 +186,15 @@ def main():
     # OUI-Datenbank laden
     oui_db = load_oui_db()
 
+    # WiGLE Client initialisieren
+    wigle_client = None
+    wigle_cfg = config.get('wigle', {})
+    if wigle_cfg.get('enabled') and wigle_cfg.get('api_token'):
+        wigle_client = WiGLEClient(wigle_cfg['api_name'], wigle_cfg['api_token'])
+        log.info('WiGLE aktiviert')
+    else:
+        log.info('WiGLE deaktiviert')
+
     # BT-Scans laden
     bt_devices_all = {}
     if args.bt_scans:
@@ -206,7 +225,7 @@ def main():
     )
 
     log.info(f'Geräte gesamt: {len(scored)} | Verdächtig: {len(suspicious)}')
-    save_report(scored, suspicious, args.output_dir, ignore_macs, bt_devices_all, oui_db)
+    save_report(scored, suspicious, args.output_dir, ignore_macs, bt_devices_all, oui_db, wigle_client)
     sys.exit(2 if suspicious else 0)
 
 if __name__ == '__main__':
