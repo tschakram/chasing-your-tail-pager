@@ -235,10 +235,8 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
         wait $BT_PID 2>/dev/null
         [ -f "$BT_FILE" ] && BT_SCAN_FILES+=("$BT_FILE") &&             LOG green "✓ BT-Scan: $(python3 -c "import json; d=json.load(open('$BT_FILE')); print(len(d.get('bt_devices',{})))" 2>/dev/null || echo '?') Geräte"
     fi
-    sleep 1
-
-    # PCAP-Datei von WIFI_PCAP_START holen und in unseren Ordner kopieren
-    sleep 2
+    # Warten bis WIFI_PCAP_STOP die Datei fertig geschrieben hat
+    sleep 5
     # Nur PCAP nehmen die während diesem Scan erstellt wurde
     LATEST_PCAP=""
     for f in $(ls -t /root/loot/pcap/*.pcap 2>/dev/null); do
