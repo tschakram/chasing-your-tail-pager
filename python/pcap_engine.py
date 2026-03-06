@@ -62,25 +62,38 @@ def read_pcap_probes(filepath):
                 rt_len = struct.unpack('<H', data[2:4])[0]
                 dot11 = data[rt_len:]
 
-                # Probe Request = Frame Control 0x40
-                if len(dot11) < 16 or dot11[0] != 0x40:
+                # Frame Control prüfen
+                fc = dot11[0]
+                # 0x40 = Probe Request, 0x50 = Probe Response
+                if len(dot11) < 16:
                     continue
 
-                # Source MAC (Bytes 10-15)
-                mac = ':'.join(f'{b:02x}' for b in dot11[10:16])
+                if fc == 0x40:
+                    # Probe Request - Source MAC
+                    mac = ':'.join(f'{b:02x}' for b in dot11[10:16])
+                elif fc == 0x50:
+                    # Probe Response - Destination MAC (wer wird angesprochen)
+                    mac = ':'.join(f'{b:02x}' for b in dot11[4:10])
+                else:
+                    continue
 
-                # SSID aus Tagged Parameters (nach Fixed Parameters)
-                # Fixed Params bei Probe Request: 4 Bytes
-                # Danach Tagged: Tag-ID(1) + Länge(1) + Wert
+                # SSID aus Tagged Parameters
+                # Probe Request:  Fixed Params = 4 Bytes  → tag_start = 24+4 = 28
+                # Probe Response: Fixed Params = 12 Bytes → tag_start = 24+12 = 36
                 ssid = ''
-                if len(dot11) > 28:
-                    tag_start = 28  # 4 Bytes Fixed nach MAC-Feldern (24B)
+                tag_start = 36 if fc == 0x50 else 28
+                if len(dot11) > tag_start + 2:
                     try:
-                        tag_id = dot11[tag_start]
-                        tag_len = dot11[tag_start + 1]
-                        if tag_id == 0 and tag_len > 0:
-                            ssid_bytes = dot11[tag_start+2:tag_start+2+tag_len]
-                            ssid = ssid_bytes.decode('utf-8', errors='ignore').strip()
+                        # Alle Tags durchsuchen bis SSID (Tag 0) gefunden
+                        pos = tag_start
+                        while pos + 2 <= len(dot11):
+                            tag_id  = dot11[pos]
+                            tag_len = dot11[pos + 1]
+                            if tag_id == 0 and tag_len > 0:
+                                ssid_bytes = dot11[pos+2:pos+2+tag_len]
+                                ssid = ssid_bytes.decode('utf-8', errors='ignore').strip()
+                                break
+                            pos += 2 + tag_len
                     except (IndexError, UnicodeDecodeError):
                         pass
 
@@ -89,7 +102,8 @@ def read_pcap_probes(filepath):
                 if devices[mac]['first_seen'] is None:
                     devices[mac]['first_seen'] = ts_sec
                 devices[mac]['last_seen'] = ts_sec
-                if ssid:
+                # Binärmüll-SSIDs filtern
+                if ssid and ssid.isprintable() and len(ssid) > 1:
                     devices[mac]['ssids'].add(ssid)
 
     except Exception as e:
