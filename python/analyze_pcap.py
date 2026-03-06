@@ -63,7 +63,7 @@ def filter_scans(scans, ignore_macs, ignore_ssids):
 
     return filtered
 
-def save_report(scored, suspicious, output_dir, ignore_macs):
+def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None):
     os.makedirs(output_dir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(output_dir, f'cyt_report_{ts}.md')
@@ -106,6 +106,23 @@ def save_report(scored, suspicious, output_dir, ignore_macs):
             for mac in sorted(ignore_macs):
                 f.write(f'- `{mac}`\n')
 
+        if bt_devices:
+            f.write('\n## Bluetooth Geräte\n\n')
+            f.write('| MAC | Name | Typ | Korrelation WiFi |\n')
+            f.write('|-----|------|-----|---------------------|\n')
+            for mac, d in bt_devices.items():
+                # OUI-Match mit verdächtigen WiFi-Geräten prüfen
+                corr = '-'
+                for wmac in suspicious:
+                    if mac[:8].lower() == wmac[:8].lower():
+                        corr = f'⚠️ OUI-Match: `{wmac}`'
+                        break
+                    if mac.lower() == wmac.lower():
+                        corr = f'🔴 Exakt: `{wmac}`'
+                        break
+                f.write(f'| `{mac}` | {d.get("name","?")} | '
+                        f'{d.get("type","?")} | {corr} |\n')
+
     log.info(f'Report: {path}')
     return path
 
@@ -118,6 +135,8 @@ def main():
     parser.add_argument('--threshold', type=float, default=None)
     parser.add_argument('--min-appearances', type=int, default=None)
     parser.add_argument('--log-file')
+    parser.add_argument('--bt-scans', default=None,
+                        help='Kommagetrennte BT-Scan JSON-Dateien')
     args = parser.parse_args()
 
     handlers = [logging.StreamHandler()]
@@ -137,6 +156,16 @@ def main():
         config.get('surveillance', {}).get('persistence_threshold', 0.6)
     min_app = args.min_appearances or \
         config.get('surveillance', {}).get('min_appearances', 2)
+
+    # BT-Scans laden
+    bt_devices_all = {}
+    if args.bt_scans:
+        for bt_file in [f.strip() for f in args.bt_scans.split(',') if f.strip()]:
+            if os.path.exists(bt_file):
+                with open(bt_file) as f:
+                    bt_data = json.load(f)
+                bt_devices_all.update(bt_data.get('bt_devices', {}))
+        log.info(f'BT-Geräte geladen: {len(bt_devices_all)}')
 
     # Ignore-Listen laden
     ignore_macs, ignore_ssids = load_ignore_lists(config)
@@ -158,7 +187,7 @@ def main():
     )
 
     log.info(f'Geräte gesamt: {len(scored)} | Verdächtig: {len(suspicious)}')
-    save_report(scored, suspicious, args.output_dir, ignore_macs)
+    save_report(scored, suspicious, args.output_dir, ignore_macs, bt_devices_all)
     sys.exit(2 if suspicious else 0)
 
 if __name__ == '__main__':
