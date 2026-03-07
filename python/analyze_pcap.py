@@ -238,6 +238,13 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
             # Fingerprinting anwenden falls nicht schon im bt_scanner erfolgt
             bt_fingerprinted = _ensure_bt_fingerprinting(bt_devices, oui_db)
 
+            # Eigene Geräte aus Ignore-Liste herausfiltern
+            if ignore_macs:
+                bt_fingerprinted = {
+                    mac: d for mac, d in bt_fingerprinted.items()
+                    if mac.lower() not in ignore_macs
+                }
+
             # Kritische BT-Geräte (high/medium) separat hervorheben
             bt_critical = {
                 mac: d for mac, d in bt_fingerprinted.items()
