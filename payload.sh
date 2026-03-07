@@ -73,6 +73,13 @@ LOG green "✓ Abhängigkeiten OK"
 sleep 1
 
 # ============================================================
+# CLEANUP ALTER SCAN-DATEN
+# ============================================================
+CLEANUP_OUT=$(python3 "$PYTHON_DIR/cleanup.py" --config "$CONFIG_FILE" 2>/dev/null)
+CLEANUP_MSG=$(echo "$CLEANUP_OUT" | grep "^CLEANUP:" | cut -d: -f2-)
+[ -n "$CLEANUP_MSG" ] && LOG green "🗑 Cleanup: $CLEANUP_MSG"
+
+# ============================================================
 # SCAN-MODUS AUSWÄHLEN
 # ============================================================
 LOG ""
