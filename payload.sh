@@ -39,12 +39,22 @@ sleep 2
 # ============================================================
 SPINNER_ID=$(START_SPINNER "Checking dependencies...")
 
-# Systemzeit via NTP synchronisieren (falls Internet vorhanden)
+# Systemzeit prüfen und synchronisieren
+CURRENT_YEAR=$(date +%Y)
 if ntpd -q -p pool.ntp.org 2>/dev/null; then
-    LOG "Zeit synchronisiert: $(date '+%d.%m.%Y %H:%M')"
+    LOG green "✓ Zeit via NTP: $(date '+%d.%m.%Y %H:%M')"
+elif [ "$CURRENT_YEAR" -lt 2026 ]; then
+    # Systemzeit falsch - aus Hardware Clock laden
+    hwclock -s 2>/dev/null
+    CURRENT_YEAR=$(date +%Y)
+    if [ "$CURRENT_YEAR" -lt 2026 ]; then
+        LOG yellow "⚠ Systemzeit ungültig: $(date '+%d.%m.%Y %H:%M')"
+        LOG yellow "  Report-Timestamps werden falsch sein!"
+    else
+        LOG green "✓ Zeit aus RTC: $(date '+%d.%m.%Y %H:%M')"
+    fi
 else
-    LOG "⚠ NTP fehlgeschlagen - Systemzeit: $(date '+%d.%m.%Y %H:%M')"
-    LOG "  Ggf. manuell: date -s 'YYYY-MM-DD HH:MM:SS'"
+    LOG green "✓ Systemzeit OK: $(date '+%d.%m.%Y %H:%M')"
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -307,23 +317,27 @@ for f in $(ls -t "$PCAP_DIR"/scan_*.pcap 2>/dev/null); do
 done
 
 BT_LIST=$(ls -t "$LOOT_DIR"/bt_scan_*.json 2>/dev/null | grep -v "test" | tr "\n" "," | sed "s/,$//"  )
-python3 "$PYTHON_DIR/analyze_pcap.py" \
+ANALYSIS_OUTPUT=$(python3 "$PYTHON_DIR/analyze_pcap.py" \
     --pcaps "$PCAP_LIST" \
     --config "$CONFIG_FILE" \
     --output-dir "$REPORT_DIR" \
     --threshold "$PERSISTENCE_THRESHOLD" \
     --min-appearances "$MIN_APPEARANCES" \
-    ${BT_LIST:+--bt-scans "$BT_LIST"}
+    ${BT_LIST:+--bt-scans "$BT_LIST"} 2>&1)
 
 RESULT=$?
+# Report-Pfad direkt aus Python-Output extrahieren
+LATEST_REPORT=$(echo "$ANALYSIS_OUTPUT" | grep "REPORT_PATH:" | cut -d: -f2-)
+# Fallback falls REPORT_PATH leer
+if [ -z "$LATEST_REPORT" ]; then
+    LATEST_REPORT=$(ls "$REPORT_DIR"/cyt_report_*.md 2>/dev/null | sort | tail -1)
+fi
+# Logging-Output anzeigen
+echo "$ANALYSIS_OUTPUT" | grep -v "REPORT_PATH:" >&2
 STOP_SPINNER "$SPINNER_ID"
 sleep 2
 
 # ============================================================
-# ERGEBNIS ANZEIGEN
-# ============================================================
-# Nach Dateiname sortieren (nicht Dateizeitstempel) - robust gegen falsche Systemzeit
-LATEST_REPORT=$(ls "$REPORT_DIR"/*.md 2>/dev/null | sort -r | head -1)
 
 LOG ""
 LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
