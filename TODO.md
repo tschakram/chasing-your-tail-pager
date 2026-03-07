@@ -97,6 +97,12 @@
 
 ## v4.5 - Verbesserungen
 
+### BT Classic Fingerprinting (SDP)
+- [ ] `sdptool browse <MAC>` für BT Classic Geräte (kein BLE)
+- [ ] SDP Profile-UUIDs → Fingerprinting (HFP 0x111E, HSP 0x1108, A2DP 0x110A)
+- [ ] Automatisch nach Classic-Scan aufrufen wenn btmon keine UUIDs liefert
+- [ ] Beispiel: JBL Flip 5 = A2DP + HFP → Speaker mit Mikrofon 🎤
+
 ### Watch-List Management
 - [ ] Gerät direkt vom Display zur Watch-List hinzufügen
 - [ ] Typ wählen: static/dynamic
