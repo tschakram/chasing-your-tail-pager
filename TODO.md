@@ -54,3 +54,46 @@
 
 ### Fix gleichzeitig:
 - [ ] PCAP_LIST nur vom aktuellen Lauf
+
+## v4.3 - Verdächtige-Datenbank + Watch-List
+
+### suspects_db.json
+- [ ] Beim Start: alte Reports + PCAPe löschen
+- [ ] Nach Scan: neue Verdächtige speichern
+- [ ] Bekannte Verdächtige: "⚠ BEREITS BEKANNT!" im Report
+- [ ] Felder: mac, vendor, type, first_seen, last_seen, seen_count, locations[], ssids[]
+
+### watch_list.json - Drei Kategorien
+- [ ] IGNORE    → eigene Geräte (bereits vorhanden als mac_list.json)
+- [ ] STATIC    → Gerät nur an bekanntem Ort erwartet (Nachbar, Hotel, Arbeit)
+- [ ] DYNAMIC   → Gerät folgt mir = Tracking!
+
+### watch_list.json Struktur
+- [ ] mac, label, type (static/dynamic)
+- [ ] known_locations[]: name, lat, lon, radius_m (für static)
+- [ ] seen_locations[]: lat, lon, timestamp (für dynamic - wird automatisch befüllt)
+- [ ] first_seen, notes
+
+### Logik beim Scan
+- [ ] Gerät in watch_list STATIC + GPS in bekannter Zone → unauffällig
+- [ ] Gerät in watch_list STATIC + GPS außerhalb Zone → ⚠ AUSSERHALB BEKANNTER ZONE!
+- [ ] Gerät in watch_list DYNAMIC + 1 Ort → noch unauffällig
+- [ ] Gerät in watch_list DYNAMIC + 2+ Orte → 🔴 TRACKING ERKANNT!
+- [ ] Neues Gerät → suspects_db.json + Alarm
+
+### Neue Python Module
+- [ ] watch_list.py → WatchList Klasse, Zonen-Check (Haversine), Tracking-Erkennung
+- [ ] suspects_db.py → SuspectsDB Klasse, CRUD, JSON persistence
+
+### Integration in analyze_pcap.py
+- [ ] watch_list laden
+- [ ] suspects_db laden  
+- [ ] Pro Gerät: Kategorie bestimmen → ignore/static/dynamic/new
+- [ ] Report: neue Sektionen STATIC ALARM, DYNAMIC TRACKING, NEU VERDÄCHTIG
+- [ ] suspects_db nach Scan aktualisieren
+
+### Report Sektionen v4.3
+- [ ] 🔴 TRACKING ERKANNT - Dynamische Geräte an mehreren Orten
+- [ ] ⚠ AUSSERHALB BEKANNTER ZONE - Statische Geräte am falschen Ort  
+- [ ] 🆕 NEUE VERDÄCHTIGE - Noch unbekannte Geräte
+- [ ] 👁 BEOBACHTETE GERÄTE - Unauffällige watched devices
