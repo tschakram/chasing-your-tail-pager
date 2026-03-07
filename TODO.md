@@ -1,6 +1,6 @@
 # Chasing Your Tail NG - TODO
 
-## Aktueller Stand: v4.4 ✅
+## Aktueller Stand: v4.5 (in Arbeit)
 
 ### Erledigte Features
 - [x] Native Pager Framework (keine externen Tools)
@@ -97,11 +97,21 @@
 
 ## v4.5 - Verbesserungen
 
-### BT Classic Fingerprinting (SDP)
-- [ ] `sdptool browse <MAC>` für BT Classic Geräte (kein BLE)
-- [ ] SDP Profile-UUIDs → Fingerprinting (HFP 0x111E, HSP 0x1108, A2DP 0x110A)
-- [ ] Automatisch nach Classic-Scan aufrufen wenn btmon keine UUIDs liefert
-- [ ] Beispiel: JBL Flip 5 = A2DP + HFP → Speaker mit Mikrofon 🎤
+### BT Classic Fingerprinting (SDP) ✅
+- [x] `sdptool browse <MAC>` für BT Classic Geräte (kein BLE)
+- [x] SDP Profile-UUIDs → Fingerprinting (HFP 0x111E, HSP 0x1108, A2DP 0x110A)
+- [x] Automatisch nach Classic-Scan aufrufen wenn btmon keine UUIDs liefert
+- [x] Graceful Fallback: Timeout/nicht erreichbar → [], kein Crash
+- [ ] Live-Test mit JBL Flip 5 in Reichweite (JBL = Eigenes Gerät in Ignore-Liste)
+
+### BT Ignore-Liste ✅
+- [x] analyze_pcap.py: BT-Geräte gegen ignore_macs filtern
+- [x] hotel_scan.py: Ignore-Liste laden + WiFi/BLE filtern
+- [x] JBL Flip 5 `aa:bb:cc:dd:ee:01` in mac_list.json eingetragen
+
+### Bugfixes ✅
+- [x] CRLF-Problem: Windows→Pager Zeilenenden (payload.sh + Python)
+- [x] PATH fix: /mmc/usr/bin nicht im non-login shell PATH (payload.sh)
 
 ### Watch-List Management
 - [ ] Gerät direkt vom Display zur Watch-List hinzufügen
