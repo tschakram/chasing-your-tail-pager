@@ -552,13 +552,33 @@ if [ -f "$LATEST_REPORT" ]; then
                     WATCH_TYPE="dynamic"
                 fi
 
+                # Zonenwahl für Static-Typ (Zonen aus config.json - nur auf dem Pager)
+                ZONE_IDX=""
+                if [ "$WATCH_TYPE" = "static" ]; then
+                    ZONE_TMP=$(mktemp /tmp/cyt_zones_XXXXXX 2>/dev/null || echo "/tmp/cyt_zones_$$")
+                    python3 "$PYTHON_DIR/watchlist_add.py" \
+                        --list-zones --config "$CONFIG_FILE" 2>/dev/null \
+                        | grep "^ZONE:" | cut -d: -f2- > "$ZONE_TMP"
+
+                    LOG ""
+                    LOG "Zone wählen:"
+                    zi=1
+                    while IFS= read -r zname; do
+                        [ -z "$zname" ] && continue
+                        LOG "  $zi = $zname"
+                        zi=$((zi+1))
+                    done < "$ZONE_TMP"
+                    LOG "  0 = Ohne Zone"
+                    LOG ""
+                    rm -f "$ZONE_TMP"
+
+                    ZONE_IDX=$(NUMBER_PICKER "Zone:" 1)
+                fi
+
                 LOG ""
                 LOG "Hinzufügen:"
                 LOG "  MAC:  $SELECTED_MAC"
                 LOG "  Typ:  $WATCH_TYPE"
-                if [ "$WATCH_TYPE" = "static" ] && [ -n "$GPS_LAT" ] && [ "$GPS_LAT" != "0" ]; then
-                    LOG "  GPS:  $GPS_LAT, $GPS_LON"
-                fi
                 LOG ""
 
                 CONFIRMATION_DIALOG "Watch-List: $SELECTED_MAC ($WATCH_TYPE)?"
@@ -567,26 +587,30 @@ if [ -f "$LATEST_REPORT" ]; then
                         LOG yellow "⚠ Abgebrochen."
                         ;;
                     *)
-                        if [ "$WATCH_TYPE" = "static" ] && [ -n "$GPS_LAT" ] && [ "$GPS_LAT" != "0" ]; then
+                        if [ "$WATCH_TYPE" = "static" ]; then
                             WL_OUT=$(python3 "$PYTHON_DIR/watchlist_add.py" \
                                 --mac "$SELECTED_MAC" \
                                 --label "$SELECTED_VENDOR" \
                                 --type "$WATCH_TYPE" \
-                                --lat "$GPS_LAT" --lon "$GPS_LON" \
-                                --zone "Aktueller Standort" 2>/dev/null)
+                                --zone-idx "$ZONE_IDX" \
+                                --lat "${GPS_LAT:-0}" --lon "${GPS_LON:-0}" \
+                                --config "$CONFIG_FILE" 2>/dev/null)
                         else
                             WL_OUT=$(python3 "$PYTHON_DIR/watchlist_add.py" \
                                 --mac "$SELECTED_MAC" \
                                 --label "$SELECTED_VENDOR" \
-                                --type "$WATCH_TYPE" 2>/dev/null)
+                                --type "$WATCH_TYPE" \
+                                --config "$CONFIG_FILE" 2>/dev/null)
                         fi
 
                         WL_STATUS=$(echo "$WL_OUT" | grep "^WATCHLIST:" | cut -d: -f2)
+                        WL_ZONE=$(echo "$WL_OUT" | grep "^WATCHLIST:" | cut -d: -f4-)
                         case "$WL_STATUS" in
                             OK)
                                 VIBRATE 3
                                 LOG green "✓ Watch-List: $SELECTED_MAC"
-                                LOG green "  Typ: $WATCH_TYPE hinzugefügt"
+                                LOG green "  Typ: $WATCH_TYPE"
+                                [ -n "$WL_ZONE" ] && LOG green "  Zone: $WL_ZONE"
                                 ;;
                             ALREADY_EXISTS)
                                 WL_LABEL=$(echo "$WL_OUT" | grep "^WATCHLIST:" | cut -d: -f3-)
