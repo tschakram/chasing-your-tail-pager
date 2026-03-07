@@ -1,6 +1,6 @@
 # Chasing Your Tail NG - TODO
 
-## Aktueller Stand: v4.5 (in Arbeit)
+## Aktueller Stand: v4.5 ✅ abgeschlossen
 
 ### Erledigte Features
 - [x] Native Pager Framework (keine externen Tools)
@@ -95,42 +95,70 @@
 
 ---
 
-## v4.5 - Verbesserungen
+## v4.5 - Verbesserungen ✅
 
 ### BT Classic Fingerprinting (SDP) ✅
 - [x] `sdptool browse <MAC>` für BT Classic Geräte (kein BLE)
 - [x] SDP Profile-UUIDs → Fingerprinting (HFP 0x111E, HSP 0x1108, A2DP 0x110A)
 - [x] Automatisch nach Classic-Scan aufrufen wenn btmon keine UUIDs liefert
 - [x] Graceful Fallback: Timeout/nicht erreichbar → [], kein Crash
-- [ ] Live-Test mit JBL Flip 5 in Reichweite (JBL = Eigenes Gerät in Ignore-Liste)
+- [x] JBL Flip 5 in Ignore-Liste (Live-Test bestätigt: taucht nicht mehr auf)
 
 ### BT Ignore-Liste ✅
 - [x] analyze_pcap.py: BT-Geräte gegen ignore_macs filtern
 - [x] hotel_scan.py: Ignore-Liste laden + WiFi/BLE filtern
-- [x] JBL Flip 5 `d8:37:3b:5d:19:2e` in mac_list.json eingetragen
+- [x] JBL Flip 5 `d8:37:3b:5d:19:2e` in mac_list.json auf Pager eingetragen
+
+### Watch-List Management vom Display ✅
+- [x] python/watchlist_add.py: CLI-Wrapper für WatchList.add()
+- [x] payload.sh: Watch-List-Block nach Report-Anzeige
+- [x] Verdächtige MACs aus Report extrahieren (Emoji-Fix: gsub /[^0-9a-fA-F:]/)
+- [x] NUMBER_PICKER Gerät (1-N oder 0=Überspringen)
+- [x] NUMBER_PICKER Typ: 1=Dynamic, 2=Static
+- [x] Zonenwahl: konfigurierte Zonen aus config.json + "Aktueller GPS-Standort"
+- [x] CONFIRMATION_DIALOG vor Eintrag
+- [x] VIBRATE 3 + LOG green bei Erfolg
+- [x] Duplikat-Erkennung (ALREADY_EXISTS)
+- [x] GPS-Koordinaten nur in config.json auf Pager (NIEMALS im Repo)
+- [x] config.example.json: watch_list-Sektion mit Platzhalter-GPS (0.000000)
+
+### WiGLE Nearby-Search ✅
+- [x] search_nearby(lat, lon, radius_m=200) mit GPS-Koordinaten
+- [x] nearby_cross_reference(): matched + unmatched Geräte
+- [x] format_nearby_section(): Markdown-Sektion im Report
+- [x] Wird am Ende von save_report() aufgerufen (GPS erforderlich)
+
+### Cleanup beim Start ✅
+- [x] python/cleanup.py: Löscht alte Reports/PCAPs/BT-Scans/Logs
+- [x] config.json: cleanup-Sektion (keep_reports_days, keep_pcaps_days etc.)
+- [x] payload.sh: cleanup beim Start, Ergebnis als LOG-Zeile
+- [x] --dry-run und --verbose Flags
 
 ### Bugfixes ✅
 - [x] CRLF-Problem: Windows→Pager Zeilenenden (payload.sh + Python)
 - [x] PATH fix: /mmc/usr/bin nicht im non-login shell PATH (payload.sh)
+- [x] MAC-Emoji-Bug: 🔴 blieb in MAC-Feld hängen bei awk-Extraktion
+- [x] SSH-Config: ~/.ssh/config für einfacheren Zugriff als "pager"
+- [x] .gitattributes: LF-Zeilenenden für alle Textdateien
 
-### Watch-List Management
-- [ ] Gerät direkt vom Display zur Watch-List hinzufügen
-- [ ] Typ wählen: static/dynamic
-- [ ] Bei static: aktuelle GPS-Position als Zone speichern
-- [ ] Label eingeben via NUMBER_PICKER oder fixer Name
+### README / Dokumentation ✅
+- [x] How to Use (EN + DE): Ignore-Listen, Watch-List, Scan-Empfehlungen
+- [x] Beispiel 45-Minuten-Fahrt: Ablauf + Persistence-Score-Tabelle
+- [x] Dateistruktur aktualisiert (alle v4.5-Dateien)
+- [x] Modus 4 in Scan-Modi-Tabelle
+- [x] Version v4.2 → v4.5 in Beschreibungen
 
-### Cleanup beim Start
-- [ ] Alte Reports löschen (älter als X Tage, konfigurierbar)
-- [ ] Alte PCAPe löschen (außer letzten N Scans)
-- [ ] Konfigurierbar in config.json
+---
+
+## v4.6 - Mögliche nächste Features
 
 ### GPS Verbesserungen
 - [ ] GPS-Track KML Export (Google Earth)
-- [ ] Geschwindigkeit berechnen (stehend/fahrend)
-- [ ] Bei stehendem Scan: statische Geräte ignorieren
+- [ ] Geschwindigkeit berechnen (stehend/fahrend erkennbar)
+- [ ] Bei stehendem Scan: statische Umgebungsgeräte automatisch niedriger wichten
 
-### Display Verbesserungen  
-- [ ] Live-Updates während Scan (Geräte-Counter)
+### Display Verbesserungen
+- [ ] Live-Updates während Scan (Geräte-Counter pro Runde)
 - [ ] Scan-Fortschritt in Prozent
 - [ ] BT-Geräte Counter während BT-Scan
 
