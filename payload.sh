@@ -479,8 +479,9 @@ if [ "$SHOW_REPORT" = true ]; then
         LOG ""
         LOG "Verdächtige MACs:"
         grep "^| 🔴" "$LATEST_REPORT" | while IFS= read -r line; do
-            # Format: MAC | Hersteller | Score | Appearances
-            MAC=$(echo "$line" | awk -F"|" "{print \$2}" | tr -d " \`")
+            # Format: MAC | Hersteller | Typ | Score | Appearances
+            # gsub /[^0-9a-fA-F:]/ entfernt Emoji + Backticks, nur MAC-Format bleibt
+            MAC=$(echo "$line" | awk -F"|" '{mac=$2; gsub(/[^0-9a-fA-F:]/,"",mac); print mac}')
             VENDOR=$(echo "$line" | awk -F"|" "{print \$3}" | tr -d " ")
             MTYPE=$(echo "$line" | awk -F"|" "{print \$4}" | tr -d " ")
             SCORE=$(echo "$line" | awk -F"|" "{print \$5}" | tr -d " ")
@@ -501,10 +502,11 @@ if [ -f "$LATEST_REPORT" ]; then
     WATCH_TMP=$(mktemp /tmp/cyt_watch_XXXXXX 2>/dev/null || echo "/tmp/cyt_watch_$$")
 
     # Verdächtige MACs aus Report extrahieren → "MAC|Hersteller" pro Zeile
+    # gsub /[^0-9a-fA-F:]/ entfernt Emoji, Backticks, Spaces – nur MAC-Format bleibt
     grep "^| 🔴" "$LATEST_REPORT" | awk -F'|' '{
-        mac=$2; gsub(/[[:space:]`]/, "", mac)
+        mac=$2; gsub(/[^0-9a-fA-F:]/, "", mac)
         vendor=$3; gsub(/^[[:space:]]+|[[:space:]]+$/, "", vendor)
-        if (mac != "") print mac "|" vendor
+        if (length(mac) == 17) print mac "|" vendor
     }' > "$WATCH_TMP"
 
     MAC_COUNT=$(awk 'END{print NR}' "$WATCH_TMP")
