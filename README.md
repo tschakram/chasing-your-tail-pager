@@ -67,10 +67,10 @@ Files live in `/root/loot/chasing_your_tail/ignore_lists/` on the Pager (never c
 **`mac_list.json`** – your own WiFi + Bluetooth devices:
 ```json
 {
-  "ignore_macs": ["AA:BB:CC:DD:EE:FF", "AA:BB:CC:DD:EE:01"],
+  "ignore_macs": ["AA:BB:CC:DD:EE:FF", "11:22:33:44:55:66"],
   "comments": {
     "AA:BB:CC:DD:EE:FF": "My Garmin GPS",
-    "AA:BB:CC:DD:EE:01": "My JBL Speaker"
+    "11:22:33:44:55:66": "My JBL Speaker"
   }
 }
 ```
@@ -395,10 +395,10 @@ Die Dateien liegen in `/root/loot/chasing_your_tail/ignore_lists/` auf dem Pager
 **`mac_list.json`** – eigene WiFi- und Bluetooth-Geräte:
 ```json
 {
-  "ignore_macs": ["AA:BB:CC:DD:EE:FF", "AA:BB:CC:DD:EE:01"],
+  "ignore_macs": ["AA:BB:CC:DD:EE:FF", "11:22:33:44:55:66"],
   "comments": {
     "AA:BB:CC:DD:EE:FF": "Eigenes Garmin GPS",
-    "AA:BB:CC:DD:EE:01": "Eigener JBL Lautsprecher"
+    "11:22:33:44:55:66": "Eigener JBL Lautsprecher"
   }
 }
 ```
