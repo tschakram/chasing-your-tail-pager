@@ -10,3 +10,15 @@ loot/
 __pycache__/
 *.pyc
 *.pyo
+
+# Ignore-Listen schützen (persönliche Daten)
+/root/loot/chasing_your_tail/ignore_lists/
+
+# Persönliche Beobachtungs- und Verdächtige-Daten (GPS, MACs)
+watch_list.json
+suspects_db.json
+# OUI und WiGLE Cache
+oui_cache.json
+wigle_cache.json
+# GPS Track
+gps_track.csv
