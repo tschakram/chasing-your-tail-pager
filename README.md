@@ -98,8 +98,8 @@ Add a `watch_list` section with your real positions:
 "watch_list": {
   "default_zone_radius_m": 100,
   "known_zones": [
-    { "name": "Home",   "lat": 48.1234, "lon": 11.5678, "radius_m": 150 },
-    { "name": "Office", "lat": 48.9876, "lon": 12.3456, "radius_m": 100 }
+    { "name": "Home",   "lat": 0.000000, "lon": 0.000000, "radius_m": 150 },
+    { "name": "Office", "lat": 0.000000, "lon": 0.000000, "radius_m": 100 }
   ]
 }
 ```
@@ -426,8 +426,8 @@ GPS-Koordinaten werden **ausschließlich in `config.json` auf dem Pager** gespei
 "watch_list": {
   "default_zone_radius_m": 100,
   "known_zones": [
-    { "name": "Zuhause", "lat": 48.1234, "lon": 11.5678, "radius_m": 150 },
-    { "name": "Büro",    "lat": 48.9876, "lon": 12.3456, "radius_m": 100 }
+    { "name": "Zuhause", "lat": 0.000000, "lon": 0.000000, "radius_m": 150 },
+    { "name": "Büro",    "lat": 0.000000, "lon": 0.000000, "radius_m": 100 }
   ]
 }
 ```

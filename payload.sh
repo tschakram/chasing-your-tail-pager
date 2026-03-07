@@ -518,18 +518,23 @@ if [ -f "$LATEST_REPORT" ]; then
         LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
         LOG ""
 
-        # Nummerierte Liste anzeigen
-        i=1
-        while IFS='|' read -r wl_mac wl_vendor; do
-            [ -z "$wl_mac" ] && continue
-            LOG "  $i = $wl_mac"
-            LOG "      $wl_vendor"
-            i=$((i+1))
-        done < "$WATCH_TMP"
-        LOG "  0 = Überspringen"
-        LOG ""
+        # Kandidaten-Report erstellen und anzeigen (SHOW_REPORT scrollbar,
+        # bleibt sichtbar bis Nutzer navigiert → dann NUMBER_PICKER)
+        WATCH_REPORT_TMP=$(mktemp /tmp/cyt_wr_XXXXXX 2>/dev/null || echo "/tmp/cyt_wr_$$")
+        {
+            printf '# Watch-List Kandidaten\n\n'
+            i=1
+            while IFS='|' read -r wl_mac wl_vendor; do
+                [ -z "$wl_mac" ] && continue
+                printf '## %d. %s\n`%s`\n\n' "$i" "$wl_vendor" "$wl_mac"
+                i=$((i+1))
+            done < "$WATCH_TMP"
+            printf '---\n**0** = Überspringen\n'
+        } > "$WATCH_REPORT_TMP"
+        SHOW_REPORT "$WATCH_REPORT_TMP"
+        rm -f "$WATCH_REPORT_TMP"
 
-        WATCH_PICK=$(NUMBER_PICKER "Gerät zur Watch-List:" 0)
+        WATCH_PICK=$(NUMBER_PICKER "Gerät-Nr. (0=Skip):" 0)
 
         if [ -n "$WATCH_PICK" ] && [ "$WATCH_PICK" -gt 0 ] 2>/dev/null && \
            [ "$WATCH_PICK" -le "$MAC_COUNT" ] 2>/dev/null; then
@@ -562,19 +567,22 @@ if [ -f "$LATEST_REPORT" ]; then
                         --list-zones --config "$CONFIG_FILE" 2>/dev/null \
                         | grep "^ZONE:" | cut -d: -f2- > "$ZONE_TMP"
 
-                    LOG ""
-                    LOG "Zone wählen:"
-                    zi=1
-                    while IFS= read -r zname; do
-                        [ -z "$zname" ] && continue
-                        LOG "  $zi = $zname"
-                        zi=$((zi+1))
-                    done < "$ZONE_TMP"
-                    LOG "  0 = Ohne Zone"
-                    LOG ""
-                    rm -f "$ZONE_TMP"
+                    # Zonen-Report erstellen und anzeigen (scrollbar vor NUMBER_PICKER)
+                    ZONE_REPORT_TMP=$(mktemp /tmp/cyt_zr_XXXXXX 2>/dev/null || echo "/tmp/cyt_zr_$$")
+                    {
+                        printf '# Zone wählen\n\n'
+                        zi=1
+                        while IFS= read -r zname; do
+                            [ -z "$zname" ] && continue
+                            printf '**%d.** %s\n\n' "$zi" "$zname"
+                            zi=$((zi+1))
+                        done < "$ZONE_TMP"
+                        printf '---\n**0** = Ohne Zone\n'
+                    } > "$ZONE_REPORT_TMP"
+                    SHOW_REPORT "$ZONE_REPORT_TMP"
+                    rm -f "$ZONE_REPORT_TMP" "$ZONE_TMP"
 
-                    ZONE_IDX=$(NUMBER_PICKER "Zone:" 1)
+                    ZONE_IDX=$(NUMBER_PICKER "Zone-Nr. (0=Ohne):" 1)
                 fi
 
                 LOG ""
