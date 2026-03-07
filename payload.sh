@@ -494,6 +494,118 @@ if [ "$SHOW_REPORT" = true ]; then
     fi
 fi
 
+# ============================================================
+# WATCH-LIST Management
+# ============================================================
+if [ -f "$LATEST_REPORT" ]; then
+    WATCH_TMP=$(mktemp /tmp/cyt_watch_XXXXXX 2>/dev/null || echo "/tmp/cyt_watch_$$")
+
+    # Verdächtige MACs aus Report extrahieren → "MAC|Hersteller" pro Zeile
+    grep "^| 🔴" "$LATEST_REPORT" | awk -F'|' '{
+        mac=$2; gsub(/[[:space:]`]/, "", mac)
+        vendor=$3; gsub(/^[[:space:]]+|[[:space:]]+$/, "", vendor)
+        if (mac != "") print mac "|" vendor
+    }' > "$WATCH_TMP"
+
+    MAC_COUNT=$(awk 'END{print NR}' "$WATCH_TMP")
+
+    if [ "$MAC_COUNT" -gt 0 ]; then
+        LOG ""
+        LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        LOG blue "   Watch-List Management"
+        LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        LOG ""
+
+        # Nummerierte Liste anzeigen
+        i=1
+        while IFS='|' read -r wl_mac wl_vendor; do
+            [ -z "$wl_mac" ] && continue
+            LOG "  $i = $wl_mac"
+            LOG "      $wl_vendor"
+            i=$((i+1))
+        done < "$WATCH_TMP"
+        LOG "  0 = Überspringen"
+        LOG ""
+
+        WATCH_PICK=$(NUMBER_PICKER "Gerät zur Watch-List:" 0)
+
+        if [ -n "$WATCH_PICK" ] && [ "$WATCH_PICK" -gt 0 ] 2>/dev/null && \
+           [ "$WATCH_PICK" -le "$MAC_COUNT" ] 2>/dev/null; then
+
+            SELECTED_LINE=$(sed -n "${WATCH_PICK}p" "$WATCH_TMP")
+            SELECTED_MAC=$(echo "$SELECTED_LINE" | cut -d'|' -f1)
+            SELECTED_VENDOR=$(echo "$SELECTED_LINE" | cut -d'|' -f2-)
+
+            if [ -n "$SELECTED_MAC" ]; then
+                LOG ""
+                LOG "Gerät:  $SELECTED_MAC"
+                LOG "        $SELECTED_VENDOR"
+                LOG ""
+                LOG "  1 = Dynamic  (Tracking-Erkennung)"
+                LOG "  2 = Static   (Nur an bekanntem Ort)"
+                LOG ""
+                WATCH_TYPE_NUM=$(NUMBER_PICKER "Überwachungstyp:" 1)
+
+                if [ "$WATCH_TYPE_NUM" -eq 2 ] 2>/dev/null; then
+                    WATCH_TYPE="static"
+                else
+                    WATCH_TYPE="dynamic"
+                fi
+
+                LOG ""
+                LOG "Hinzufügen:"
+                LOG "  MAC:  $SELECTED_MAC"
+                LOG "  Typ:  $WATCH_TYPE"
+                if [ "$WATCH_TYPE" = "static" ] && [ -n "$GPS_LAT" ] && [ "$GPS_LAT" != "0" ]; then
+                    LOG "  GPS:  $GPS_LAT, $GPS_LON"
+                fi
+                LOG ""
+
+                CONFIRMATION_DIALOG "Watch-List: $SELECTED_MAC ($WATCH_TYPE)?"
+                case $? in
+                    $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+                        LOG yellow "⚠ Abgebrochen."
+                        ;;
+                    *)
+                        if [ "$WATCH_TYPE" = "static" ] && [ -n "$GPS_LAT" ] && [ "$GPS_LAT" != "0" ]; then
+                            WL_OUT=$(python3 "$PYTHON_DIR/watchlist_add.py" \
+                                --mac "$SELECTED_MAC" \
+                                --label "$SELECTED_VENDOR" \
+                                --type "$WATCH_TYPE" \
+                                --lat "$GPS_LAT" --lon "$GPS_LON" \
+                                --zone "Aktueller Standort" 2>/dev/null)
+                        else
+                            WL_OUT=$(python3 "$PYTHON_DIR/watchlist_add.py" \
+                                --mac "$SELECTED_MAC" \
+                                --label "$SELECTED_VENDOR" \
+                                --type "$WATCH_TYPE" 2>/dev/null)
+                        fi
+
+                        WL_STATUS=$(echo "$WL_OUT" | grep "^WATCHLIST:" | cut -d: -f2)
+                        case "$WL_STATUS" in
+                            OK)
+                                VIBRATE 3
+                                LOG green "✓ Watch-List: $SELECTED_MAC"
+                                LOG green "  Typ: $WATCH_TYPE hinzugefügt"
+                                ;;
+                            ALREADY_EXISTS)
+                                WL_LABEL=$(echo "$WL_OUT" | grep "^WATCHLIST:" | cut -d: -f3-)
+                                LOG yellow "⚠ Bereits in Watch-List:"
+                                LOG yellow "  $WL_LABEL"
+                                ;;
+                            *)
+                                LOG red "✗ Watch-List Fehler"
+                                ;;
+                        esac
+                        ;;
+                esac
+            fi
+        fi
+    fi
+
+    rm -f "$WATCH_TMP"
+fi
+
 LOG "Drücke ROT zum Beenden"
 WAIT_FOR_BUTTON_PRESS "red"
 LED off
