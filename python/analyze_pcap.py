@@ -150,6 +150,7 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
                         f'{d.get("type","?")} | {corr} |\n')
 
     log.info(f'Report: {path}')
+    print(f'REPORT_PATH:{path}')
     return path
 
 def main():
