@@ -48,5 +48,25 @@
     "interface": "wlan1mon",
     "scan_duration_seconds": 300,
     "log_prefix": "/root/loot/chasing_your_tail/kismet_data/kismet"
+  },
+
+  "watch_list": {
+    "_comment": "Bekannte Zonen für static Watch-List Einträge.",
+    "_comment2": "WICHTIG: Echte GPS-Koordinaten NUR in config.json auf dem Pager eintragen - NIEMALS ins Git!",
+    "default_zone_radius_m": 100,
+    "known_zones": [
+      {
+        "name": "Zuhause",
+        "lat": 0.000000,
+        "lon": 0.000000,
+        "radius_m": 150
+      },
+      {
+        "name": "Büro",
+        "lat": 0.000000,
+        "lon": 0.000000,
+        "radius_m": 100
+      }
+    ]
   }
 }
