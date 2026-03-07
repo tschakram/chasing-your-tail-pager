@@ -26,7 +26,7 @@ CONFIG_FILE="/root/payloads/user/reconnaissance/chasing_your_tail/config.json"
 mkdir -p "$PCAP_DIR" "$REPORT_DIR"
 
 LOG "=============================="
-LOG "  Chasing Your Tail NG v4.0"
+LOG "  Chasing Your Tail NG v4.4"
 LOG "=============================="
 LOG ""
 LOG "Surveillance Detection"
@@ -80,9 +80,10 @@ LOG "0 = Nur WiFi"
 LOG "1 = WiFi + GPS"
 LOG "2 = WiFi + Bluetooth"
 LOG "3 = Alle Module"
+LOG "4 = Hotel-Scan (Kamera)"
 LOG ""
 sleep 5
-SCAN_MODE=$(NUMBER_PICKER "Scan-Modus (0-3):" 0)
+SCAN_MODE=$(NUMBER_PICKER "Scan-Modus (0-4):" 0)
 case $? in
     $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
         SCAN_MODE=0
@@ -92,16 +93,19 @@ esac
 # Module aktivieren
 USE_GPS=false
 USE_BT=false
+HOTEL_SCAN=false
 case "$SCAN_MODE" in
     1) USE_GPS=true ;;
     2) USE_BT=true ;;
     3) USE_GPS=true; USE_BT=true ;;
+    4) HOTEL_SCAN=true; USE_BT=true ;;
 esac
 
 LOG ""
 LOG "Module:"
-[ "$USE_GPS" = true ] && LOG green "  ✓ GPS aktiv" || LOG "  ✗ GPS deaktiviert"
-[ "$USE_BT"  = true ] && LOG green "  ✓ Bluetooth aktiv" || LOG "  ✗ Bluetooth deaktiviert"
+[ "$USE_GPS"      = true ] && LOG green "  ✓ GPS aktiv"             || LOG "  ✗ GPS deaktiviert"
+[ "$USE_BT"       = true ] && LOG green "  ✓ Bluetooth aktiv"       || LOG "  ✗ Bluetooth deaktiviert"
+[ "$HOTEL_SCAN"   = true ] && LOG green "  ✓ Hotel-Scan aktiv"      || LOG "  ✗ Hotel-Scan deaktiviert"
 LOG green "  ✓ WiFi aktiv"
 sleep 2
 
@@ -317,23 +321,45 @@ for f in $(ls -t "$PCAP_DIR"/scan_*.pcap 2>/dev/null); do
 done
 
 BT_LIST=$(ls -t "$LOOT_DIR"/bt_scan_*.json 2>/dev/null | grep -v "test" | tr "\n" "," | sed "s/,$//"  )
-ANALYSIS_OUTPUT=$(python3 "$PYTHON_DIR/analyze_pcap.py" \
-    --pcaps "$PCAP_LIST" \
-    --config "$CONFIG_FILE" \
-    --output-dir "$REPORT_DIR" \
-    --threshold "$PERSISTENCE_THRESHOLD" \
-    --min-appearances "$MIN_APPEARANCES" \
-    ${BT_LIST:+--bt-scans "$BT_LIST"} 2>&1)
 
-RESULT=$?
-# Report-Pfad direkt aus Python-Output extrahieren
-LATEST_REPORT=$(echo "$ANALYSIS_OUTPUT" | grep "REPORT_PATH:" | cut -d: -f2-)
-# Fallback falls REPORT_PATH leer
-if [ -z "$LATEST_REPORT" ]; then
-    LATEST_REPORT=$(ls "$REPORT_DIR"/cyt_report_*.md 2>/dev/null | sort | tail -1)
+if [ "$HOTEL_SCAN" = true ]; then
+    # ── Modus 4: Hotel-Scan ────────────────────────────────
+    # Letztes PCAP für Beacon-Analyse verwenden
+    HOTEL_PCAP=$(echo "$PCAP_LIST" | tr ',' '\n' | tail -1)
+    HOTEL_BT=""
+    if [ -n "$BT_LIST" ]; then
+        HOTEL_BT=$(echo "$BT_LIST" | tr ',' '\n' | head -1)
+    fi
+
+    ANALYSIS_OUTPUT=$(python3 "$PYTHON_DIR/hotel_scan.py" \
+        --pcap "$HOTEL_PCAP" \
+        ${HOTEL_BT:+--bt-scan "$HOTEL_BT"} \
+        --output-dir "$REPORT_DIR" 2>&1)
+
+    RESULT=$?
+    LATEST_REPORT=$(echo "$ANALYSIS_OUTPUT" | grep "REPORT_PATH:" | cut -d: -f2-)
+    if [ -z "$LATEST_REPORT" ]; then
+        LATEST_REPORT=$(ls "$REPORT_DIR"/hotel_scan_*.md 2>/dev/null | sort | tail -1)
+    fi
+    echo "$ANALYSIS_OUTPUT" | grep -v "REPORT_PATH:" >&2
+else
+    # ── Modi 0-3: Normale Probe-Request-Analyse ────────────
+    ANALYSIS_OUTPUT=$(python3 "$PYTHON_DIR/analyze_pcap.py" \
+        --pcaps "$PCAP_LIST" \
+        --config "$CONFIG_FILE" \
+        --output-dir "$REPORT_DIR" \
+        --threshold "$PERSISTENCE_THRESHOLD" \
+        --min-appearances "$MIN_APPEARANCES" \
+        ${BT_LIST:+--bt-scans "$BT_LIST"} 2>&1)
+
+    RESULT=$?
+    LATEST_REPORT=$(echo "$ANALYSIS_OUTPUT" | grep "REPORT_PATH:" | cut -d: -f2-)
+    if [ -z "$LATEST_REPORT" ]; then
+        LATEST_REPORT=$(ls "$REPORT_DIR"/cyt_report_*.md 2>/dev/null | sort | tail -1)
+    fi
+    echo "$ANALYSIS_OUTPUT" | grep -v "REPORT_PATH:" >&2
 fi
-# Logging-Output anzeigen
-echo "$ANALYSIS_OUTPUT" | grep -v "REPORT_PATH:" >&2
+
 STOP_SPINNER "$SPINNER_ID"
 sleep 2
 
@@ -346,31 +372,58 @@ LOG blue "━━━━━━━━━━━━━━━━━━━━━━━�
 LOG ""
 
 if [ -f "$LATEST_REPORT" ]; then
-    # Statistiken aus Report lesen
-    TOTAL=$(grep "Geräte gesamt" "$LATEST_REPORT" | grep -o '[0-9]*' | head -1)
-    SUSPICIOUS=$(grep "Verdächtig" "$LATEST_REPORT" | grep -o '[0-9]*' | head -1)
+    if [ "$HOTEL_SCAN" = true ]; then
+        # Hotel-Scan Ergebnis
+        WIFI_CAM=$(grep "WiFi Kamera-Verdächtige:" "$LATEST_REPORT" | grep -o '[0-9]*' | head -1)
+        BLE_CAM=$(grep "BLE Kamera/IoT-Verdächtige:" "$LATEST_REPORT" | grep -o '[0-9]*' | head -1)
+        SUSPICIOUS=$(( ${WIFI_CAM:-0} + ${BLE_CAM:-0} ))
 
-    LOG "📊 Geräte gesamt:  ${TOTAL:-0}"
-    LOG "🔍 Verdächtig:     ${SUSPICIOUS:-0}"
-    LOG ""
-
-    if [ "$RESULT" -eq 2 ] || [ "${SUSPICIOUS:-0}" -gt 0 ]; then
-        LED red blink
-        LOG red "⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠"
-        LOG red "  WARNUNG!"
-        LOG red "  Verdächtige Geräte"
-        LOG red "  erkannt!"
-        LOG red "⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠"
+        LOG "📷 WiFi Kameras: ${WIFI_CAM:-0}"
+        LOG "📡 BLE Verdächt: ${BLE_CAM:-0}"
         LOG ""
-        # Verdächtige MACs anzeigen
-        grep "🔴\|⚠" "$LATEST_REPORT" 2>/dev/null | while read -r line; do
-            LOG red "$line"
-        done
-        VIBRATE 3
+
+        if [ "$RESULT" -eq 2 ] || [ "${SUSPICIOUS:-0}" -gt 0 ]; then
+            LED red blink
+            LOG red "🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨"
+            LOG red "  KAMERA VERDACHT!"
+            LOG red "  Raum prüfen!"
+            LOG red "🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨"
+            LOG ""
+            grep "KRITISCH\|📷\|🔴" "$LATEST_REPORT" 2>/dev/null | head -10 | while read -r line; do
+                LOG red "$line"
+            done
+            VIBRATE 5
+        else
+            LED green solid
+            LOG green "✅ Keine Kameras erkannt"
+            LOG green "   Zimmer unauffällig!"
+        fi
     else
-        LED green solid
-        LOG green "✅ Keine Auffälligkeiten"
-        LOG green "   Alles unauffällig!"
+        # Normaler Scan
+        TOTAL=$(grep "Geräte gesamt" "$LATEST_REPORT" | grep -o '[0-9]*' | head -1)
+        SUSPICIOUS=$(grep "Verdächtig" "$LATEST_REPORT" | grep -o '[0-9]*' | head -1)
+
+        LOG "📊 Geräte gesamt:  ${TOTAL:-0}"
+        LOG "🔍 Verdächtig:     ${SUSPICIOUS:-0}"
+        LOG ""
+
+        if [ "$RESULT" -eq 2 ] || [ "${SUSPICIOUS:-0}" -gt 0 ]; then
+            LED red blink
+            LOG red "⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠"
+            LOG red "  WARNUNG!"
+            LOG red "  Verdächtige Geräte"
+            LOG red "  erkannt!"
+            LOG red "⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠⚠"
+            LOG ""
+            grep "🔴\|⚠" "$LATEST_REPORT" 2>/dev/null | while read -r line; do
+                LOG red "$line"
+            done
+            VIBRATE 3
+        else
+            LED green solid
+            LOG green "✅ Keine Auffälligkeiten"
+            LOG green "   Alles unauffällig!"
+        fi
     fi
 else
     LOG yellow "⚠ Kein Report generiert"
