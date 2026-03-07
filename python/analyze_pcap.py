@@ -9,6 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pcap_engine import read_pcap_probes, analyze_persistence
 from oui_lookup import load_oui_db, lookup
 from wigle_lookup import WiGLEClient, lookup_device, format_wigle_section
+from suspects_db import SuspectsDB
+from watch_list import WatchList
 
 def is_locally_administered(mac):
     """Prüft ob MAC lokal administriert (gespooft/randomisiert) ist."""
@@ -77,7 +79,7 @@ def filter_scans(scans, ignore_macs, ignore_ssids):
 
     return filtered
 
-def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None, wigle_client=None):
+def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None, wigle_client=None, suspects_db=None, watch_list=None, cur_lat=None, cur_lon=None):
     os.makedirs(output_dir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(output_dir, f'cyt_report_{ts}.md')
@@ -91,17 +93,72 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
             f.write(f'**Ignoriert:** {len(ignore_macs)} MACs  \n')
         f.write('\n')
 
-        if suspicious:
+        # Watch-List Alarme sammeln
+        tracking_alarms = []
+        static_alarms   = []
+        watched_ok      = []
+        if watch_list:
+            for mac, d in scored.items():
+                if watch_list.is_watched(mac):
+                    result = watch_list.check(mac, cur_lat, cur_lon)
+                    entry  = {'mac': mac, 'watch': result, 'data': d}
+                    if result['status'] == 'dynamic_alarm':
+                        tracking_alarms.append(entry)
+                    elif result['status'] == 'static_alarm':
+                        static_alarms.append(entry)
+                    else:
+                        watched_ok.append(entry)
+
+        # 🔴 TRACKING ERKANNT
+        if tracking_alarms:
+            f.write('## 🔴 TRACKING ERKANNT - Dynamische Geräte\n\n')
+            for e in tracking_alarms:
+                mac    = e['mac']
+                vendor = lookup(mac, oui_db) if oui_db else '?'
+                label  = watch_list.get(mac).get('label', mac)
+                f.write(f'### {label} (`{mac}`)\n')
+                f.write(f'- **Hersteller:** {vendor}\n')
+                f.write(f'- **Warnung:** {e["watch"]["message"]}\n\n')
+
+        # ⚠ AUSSERHALB BEKANNTER ZONE
+        if static_alarms:
+            f.write('## ⚠️ AUSSERHALB BEKANNTER ZONE\n\n')
+            for e in static_alarms:
+                mac    = e['mac']
+                vendor = lookup(mac, oui_db) if oui_db else '?'
+                label  = watch_list.get(mac).get('label', mac)
+                f.write(f'### {label} (`{mac}`)\n')
+                f.write(f'- **Hersteller:** {vendor}\n')
+                f.write(f'- **Warnung:** {e["watch"]["message"]}\n\n')
+
+        # Verdächtige die nicht in Watch-List sind
+        new_suspicious = {m: d for m, d in suspicious.items()
+                         if not (watch_list and watch_list.is_watched(m))}
+
+        if new_suspicious:
             f.write('## ⚠️ WARNING - Verdächtige Geräte\n\n')
-            f.write('| MAC | Hersteller | Typ | Score | Appearances |\n')
-            f.write('|-----|------------|-----|-------|-------------|\n')
-            for mac, d in sorted(suspicious.items(),
+            f.write('| MAC | Hersteller | Typ | Score | Appearances | Status |\n')
+            f.write('|-----|------------|-----|-------|-------------|--------|\n')
+            for mac, d in sorted(new_suspicious.items(),
                                  key=lambda x: x[1]['persistence_score'],
                                  reverse=True):
                 vendor = lookup(mac, oui_db) if oui_db else '?'
                 mtype  = mac_type(mac)
+                # suspects_db ZUERST aktualisieren, dann Status lesen
+                if suspects_db:
+                    suspects_db.update(mac, vendor, mtype,
+                                      d['persistence_score'],
+                                      d.get('ssids', []),
+                                      cur_lat, cur_lon)
+                    entry = suspects_db.get(mac)
+                    if entry['seen_count'] > 1:
+                        known_flag = f'⚠ BEKANNT ({entry["seen_count"]}x)'
+                    else:
+                        known_flag = '🆕 NEU'
+                else:
+                    known_flag = '🆕 NEU'
                 f.write(f'| `{mac}` | {vendor} | {mtype} | {d["persistence_score"]:.2f} | '
-                        f'{d["appearances"]} |\n')
+                        f'{d["appearances"]} | {known_flag} |\n')
                 # WiGLE Lookup
                 if wigle_client:
                     ssids = [s for s in d.get('ssids', []) if s and len(s) > 2]
@@ -111,8 +168,18 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
                         f.write(wigle_text + '\n')
                     else:
                         f.write('\n**WiGLE:** Keine Treffer (Wildcard Probes)\n')
-        else:
+        elif not tracking_alarms and not static_alarms:
             f.write('## ✅ Keine verdächtigen Geräte erkannt\n\n')
+
+        # 👁 Beobachtete Geräte (unauffällig)
+        if watched_ok:
+            f.write('\n## 👁 Beobachtete Geräte (unauffällig)\n\n')
+            f.write('| MAC | Label | Status |\n')
+            f.write('|-----|-------|--------|\n')
+            for e in watched_ok:
+                mac   = e['mac']
+                label = watch_list.get(mac).get('label', mac)
+                f.write(f'| `{mac}` | {label} | {e["watch"]["message"]} |\n')
 
         f.write('\n## Alle Geräte\n\n')
         f.write('| MAC | Hersteller | Typ | Score | Appearances | Fenster |\n')
@@ -226,7 +293,34 @@ def main():
     )
 
     log.info(f'Geräte gesamt: {len(scored)} | Verdächtig: {len(suspicious)}')
-    save_report(scored, suspicious, args.output_dir, ignore_macs, bt_devices_all, oui_db, wigle_client)
+    # SuspectsDB laden
+    suspects_db_path = config.get('paths', {}).get(
+        'suspects_db', '/root/loot/chasing_your_tail/suspects_db.json')
+    suspects = SuspectsDB(suspects_db_path)
+
+    # WatchList laden
+    watch_list_path = config.get('paths', {}).get(
+        'watch_list', '/root/loot/chasing_your_tail/watch_list.json')
+    wl = WatchList(watch_list_path)
+
+    # GPS-Koordinaten aus letztem GPS-Track lesen (falls vorhanden)
+    cur_lat, cur_lon = None, None
+    gps_track = config.get('paths', {}).get(
+        'gps_track', '/root/loot/chasing_your_tail/gps_track.csv')
+    if os.path.exists(gps_track):
+        try:
+            with open(gps_track) as f:
+                lines = [l.strip() for l in f if l.strip()]
+            if lines:
+                last = lines[-1].split(',')
+                cur_lat, cur_lon = float(last[1]), float(last[2])
+                log.info(f'GPS: {cur_lat}, {cur_lon}')
+        except Exception as e:
+            log.warning(f'GPS-Track Lesefehler: {e}')
+
+    save_report(scored, suspicious, args.output_dir, ignore_macs,
+                bt_devices_all, oui_db, wigle_client,
+                suspects, wl, cur_lat, cur_lon)
     sys.exit(2 if suspicious else 0)
 
 if __name__ == '__main__':
