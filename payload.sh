@@ -12,7 +12,7 @@
 SCAN_ROUNDS=1
 SCAN_DURATION=30
 PERSISTENCE_THRESHOLD=0.6
-MIN_APPEARANCES=2
+# MIN_APPEARANCES wird dynamisch nach SCAN_DURATION berechnet
 
 LOOT_DIR="/root/loot/chasing_your_tail"
 PCAP_DIR="$LOOT_DIR/pcap"
@@ -38,6 +38,14 @@ sleep 2
 # DEPENDENCY CHECK
 # ============================================================
 SPINNER_ID=$(START_SPINNER "Checking dependencies...")
+
+# Systemzeit via NTP synchronisieren (falls Internet vorhanden)
+if ntpd -q -p pool.ntp.org 2>/dev/null; then
+    LOG "Zeit synchronisiert: $(date '+%d.%m.%Y %H:%M')"
+else
+    LOG "⚠ NTP fehlgeschlagen - Systemzeit: $(date '+%d.%m.%Y %H:%M')"
+    LOG "  Ggf. manuell: date -s 'YYYY-MM-DD HH:MM:SS'"
+fi
 
 if ! command -v python3 >/dev/null 2>&1; then
     STOP_SPINNER "$SPINNER_ID"
@@ -132,6 +140,12 @@ case $? in
         ;;
 esac
 LOG "Dauer: ${SCAN_DURATION}s"
+
+# min_appearances dynamisch: ~1 pro 60s, min 3, max 15
+MIN_APPEARANCES=$(( SCAN_DURATION / 60 + 2 ))
+[ "$MIN_APPEARANCES" -lt 3 ] && MIN_APPEARANCES=3
+[ "$MIN_APPEARANCES" -gt 15 ] && MIN_APPEARANCES=15
+LOG "Min. Appearances: ${MIN_APPEARANCES}"
 
 LOG ""
 LOG ""
