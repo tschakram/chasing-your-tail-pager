@@ -137,7 +137,7 @@
 - WiFi Pineapple Pager (OpenWrt 24.10.1, mipsel_24kc)
 - Python 3.11.14
 - u-blox GNSS Receiver (USB /dev/ttyACM0, gpsd 3.25)
-- Bluetooth hci0 (USB, BlueZ 5.72) BD: 00:13:37:AD:61:C6
+- Bluetooth hci0 (USB, BlueZ 5.72)
 
 ## Loot-Struktur
 ```
