@@ -398,10 +398,22 @@ def main():
     # OUI-DB laden
     oui_db = load_oui_db()
 
+    # Ignore-Liste laden
+    ignore_macs = set()
+    mac_list_path = '/root/loot/chasing_your_tail/ignore_lists/mac_list.json'
+    try:
+        with open(mac_list_path) as f:
+            ignore_macs = set(m.lower() for m in json.load(f).get('ignore_macs', []))
+        if ignore_macs:
+            log.info(f'Ignore-MACs geladen: {len(ignore_macs)}')
+    except Exception:
+        pass
+
     # WiFi Beacon-Analyse
     log.info(f'Lese Beacon Frames: {args.pcap}')
     beacons       = read_pcap_beacons(args.pcap)
-    wifi_suspects = analyze_beacons(beacons, oui_db)
+    wifi_suspects = [s for s in analyze_beacons(beacons, oui_db)
+                     if s['bssid'].lower() not in ignore_macs]
     log.info(f'WiFi: {len(beacons)} Beacons, {len(wifi_suspects)} Verdächtige')
 
     # BLE Scan
@@ -423,6 +435,13 @@ def main():
             mac: dev for mac, dev in ble_all.items()
             if dev.get('risk') in (RISK_HIGH, RISK_MEDIUM)
         }
+
+    # Eigene Geräte aus Ignore-Liste entfernen
+    if ignore_macs:
+        ble_all      = {m: d for m, d in ble_all.items()
+                        if m.lower() not in ignore_macs}
+        ble_suspects = {m: d for m, d in ble_suspects.items()
+                        if m.lower() not in ignore_macs}
 
     # Report generieren
     report_path, total = save_hotel_report(
