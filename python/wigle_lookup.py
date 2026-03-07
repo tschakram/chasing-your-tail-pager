@@ -2,6 +2,7 @@
 """
 wigle_lookup.py - WiGLE API Integration für Chasing Your Tail NG
 Sucht MAC, BT-Adresse und SSIDs in der WiGLE Datenbank.
+v4.5: Nearby-Search – bekannte Geräte in GPS-Radius abfragen.
 """
 import urllib.request, urllib.parse, json, logging, base64, time, os
 
@@ -86,6 +87,41 @@ class WiGLEClient:
         })
         return self._parse_network(data, 'ssid')
 
+    def search_nearby(self, lat, lon, radius_m=200):
+        """
+        Sucht alle WiGLE-bekannten WiFi-Netze in einem Radius um GPS-Position.
+        radius_m: Suchradius in Metern (empfohlen: 100-500m).
+        Gibt Liste von {ssid, netid, lat, lon, last_seen} zurück.
+        """
+        import math
+        # Grad-Offset für Radius: 1° Lat ≈ 111km, 1° Lon ≈ 111km * cos(lat)
+        lat_delta = radius_m / 111_000.0
+        lon_delta = radius_m / (111_000.0 * max(math.cos(math.radians(lat)), 0.01))
+
+        data = self._get('/network/search', {
+            'latrange1':     lat - lat_delta,
+            'latrange2':     lat + lat_delta,
+            'longrange1':    lon - lon_delta,
+            'longrange2':    lon + lon_delta,
+            'resultsPerPage': 100,
+            'onlymine':      'false',
+        })
+        if not data or not data.get('success'):
+            return []
+
+        results = []
+        for r in data.get('results', []):
+            results.append({
+                'ssid':      r.get('ssid', ''),
+                'netid':     r.get('netid', '').upper().replace('-', ':'),
+                'lat':       r.get('trilat', 0),
+                'lon':       r.get('trilong', 0),
+                'last_seen': r.get('lasttime', '')[:10],
+                'type':      'wifi',
+            })
+        log.info(f'WiGLE Nearby ({radius_m}m): {len(results)} Netze in Datenbank')
+        return results
+
     def _parse_network(self, data, ntype):
         if not data or not data.get('success'):
             return None
@@ -150,6 +186,55 @@ def lookup_device(mac, ssids, bt_mac=None, client=None):
             results['ssids'][ssid] = client.search_ssid(ssid)
 
     return results
+
+def nearby_cross_reference(nearby_list, suspicious_macs):
+    """
+    Gleicht WiGLE-Nearby-Ergebnisse mit verdächtigen Geräten ab.
+    suspicious_macs: set/list von MACs aus dem aktuellen Scan.
+    Gibt zurück: (matched, unmatched_known)
+      matched        – verdächtige Geräte die WiGLE in diesem Bereich kennt
+      unmatched_known – WiGLE-Geräte die wir NICHT gesehen haben (interessant!)
+    """
+    sus_set = set(m.upper().replace('-', ':') for m in suspicious_macs)
+    nearby_set = {r['netid']: r for r in nearby_list if r['netid']}
+
+    matched = {mac: nearby_set[mac.upper().replace('-', ':')]
+               for mac in suspicious_macs
+               if mac.upper().replace('-', ':') in nearby_set}
+
+    unmatched_known = [r for nid, r in nearby_set.items()
+                       if nid not in sus_set and r.get('ssid')]
+    return matched, unmatched_known
+
+
+def format_nearby_section(nearby_list, suspicious_macs, lat, lon, radius_m=200):
+    """Formatiert WiGLE Nearby-Ergebnisse für den Report."""
+    if not nearby_list:
+        return ''
+
+    matched, unmatched = nearby_cross_reference(nearby_list, suspicious_macs)
+    lines = [f'\n## 📡 WiGLE Nearby-Abgleich ({radius_m}m Radius)\n']
+    lines.append(f'**GPS:** {lat:.5f}, {lon:.5f}  ')
+    lines.append(f'**WiGLE kennt:** {len(nearby_list)} Netze im Bereich\n')
+
+    if matched:
+        lines.append(f'### ⚠️ Verdächtige Geräte auch in WiGLE bekannt ({len(matched)})\n')
+        lines.append('| MAC | SSID | Zuletzt gesehen |')
+        lines.append('|-----|------|-----------------|')
+        for mac, r in matched.items():
+            lines.append(f'| `{mac}` | {r.get("ssid","?")} | {r.get("last_seen","?")} |')
+        lines.append('')
+
+    if unmatched[:10]:  # Max 10 zeigen
+        lines.append(f'### 📋 WiGLE-bekannte Netze (nicht im aktuellen Scan)\n')
+        lines.append('| SSID | MAC | Zuletzt gesehen |')
+        lines.append('|------|-----|-----------------|')
+        for r in unmatched[:10]:
+            lines.append(f'| {r.get("ssid","?")} | `{r.get("netid","?")}` | {r.get("last_seen","?")} |')
+        lines.append('')
+
+    return '\n'.join(lines)
+
 
 def format_wigle_section(wigle_results):
     """Formatiert WiGLE-Ergebnisse für den Report."""

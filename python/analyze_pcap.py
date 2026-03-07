@@ -8,7 +8,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pcap_engine import read_pcap_probes, analyze_persistence
 from oui_lookup import load_oui_db, lookup
-from wigle_lookup import WiGLEClient, lookup_device, format_wigle_section
+from wigle_lookup import WiGLEClient, lookup_device, format_wigle_section, format_nearby_section
 from suspects_db import SuspectsDB
 from watch_list import WatchList
 
@@ -297,6 +297,19 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
                 f.write(f'| `{mac}` | {d.get("name","?")} | '
                         f'{d.get("device_type", d.get("type","?"))} | '
                         f'{risk_em} {d.get("risk","?")} | {mic} | {cam} | {corr} |\n')
+
+    # WiGLE Nearby-Abgleich (nur wenn GPS + WiGLE verfügbar)
+    if wigle_client and cur_lat and cur_lon and cur_lat != 0 and cur_lon != 0:
+        try:
+            nearby = wigle_client.search_nearby(cur_lat, cur_lon, radius_m=200)
+            if nearby:
+                nearby_section = format_nearby_section(
+                    nearby, list(suspicious.keys()), cur_lat, cur_lon, radius_m=200
+                )
+                with open(path, 'a') as f:
+                    f.write(nearby_section)
+        except Exception as e:
+            log.warning(f'WiGLE Nearby fehlgeschlagen: {e}')
 
     log.info(f'Report: {path}')
     print(f'REPORT_PATH:{path}')
