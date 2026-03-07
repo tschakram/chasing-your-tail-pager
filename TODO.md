@@ -1,6 +1,6 @@
 # Chasing Your Tail NG - TODO
 
-## Aktueller Stand: v4.3 ✅
+## Aktueller Stand: v4.4 ✅
 
 ### Erledigte Features
 - [x] Native Pager Framework (keine externen Tools)
@@ -27,69 +27,71 @@
 
 ---
 
-## v4.4 - BT Device Fingerprinting
+## v4.4 - BT Device Fingerprinting ✅
 
-### bt_devices_db.json
-- [ ] OUI → Hersteller + typische Geräte
-- [ ] BLE Service UUIDs → Gerätetyp + Risiko
-      - 0x111E Handsfree → Headset mit Mikrofon 🎤 (medium risk)
-      - 0x110B Audio Sink → Kopfhörer ohne Mikrofon 🎧 (low risk)
-      - 0x1108 Headset → Headset Classic (medium risk)
-      - 0x180A Device Info → IoT Gerät (low risk)
-      - 0xFE9F Google → Chromecast/Google Gerät
-      - 0xFE2C Apple → AirDrop/AirPods
-- [ ] Appearance Codes → Gerätekategorie
-- [ ] Bekannte Gerätenamen → Mikrofon ja/nein
-- [ ] Risikobewertung: low/medium/high
+### bt_fingerprint.py (neu)
+- [x] BLE Service UUIDs → Gerätetyp + Risiko
+      - 0x111E Handsfree → Headset mit Mikrofon 🎤 (medium)
+      - 0x110B Audio Sink → Kopfhörer ohne Mikrofon 🎧 (low)
+      - 0x1108 Headset → Headset Classic (medium)
+      - 0x180A Device Info → IoT Gerät (none)
+      - 0xFE9F Google → Chromecast/Google Gerät (low)
+      - 0xFE2C Apple → AirDrop/AirPods (low)
+      - 0xFFE0/FFE1 → Kamera-Service (high)
+- [x] Appearance Codes → Gerätekategorie + Risiko
+- [x] Bekannte Gerätenamen → Mikrofon / Kamera erkannt
+- [x] Risikobewertung: none/low/medium/high
+- [x] Kamera-Hersteller OUI-Datenbank (intern)
 
-### bt_scanner.py erweitern
-- [ ] BLE Advertisement Data auslesen
-- [ ] Service UUIDs erfassen
-- [ ] Appearance Code auslesen
-- [ ] Gerätename aus Advertisement
-- [ ] OUI Lookup für BT MACs (gleiche IEEE Liste)
-- [ ] Risikobewertung pro Gerät
+### bt_scanner.py erweitert
+- [x] BLE Advertisement Data via btmon (parallel)
+- [x] Service UUIDs erfassen
+- [x] Appearance Code auslesen
+- [x] Gerätename aus Advertisement
+- [x] OUI Lookup für BT MACs (IEEE Liste via oui_lookup.py)
+- [x] Risikobewertung + Fingerprint pro Gerät
 
-### Report BT Fingerprinting
-- [ ] Hersteller + Gerätetyp anzeigen
-- [ ] Mikrofon-Flag anzeigen
-- [ ] Risiko-Level anzeigen
-- [ ] Korrelation WiFi ↔ BT (gleicher OUI)
+### Report BT Fingerprinting (analyze_pcap.py)
+- [x] Kritische BT-Geräte separat hervorheben (🔴 Sektion)
+- [x] Mikrofon-Flag 🎤 anzeigen
+- [x] Kamera-Flag 📷 anzeigen
+- [x] Risiko-Level in BT-Tabelle
+- [x] Korrelation WiFi ↔ BT (gleicher OUI)
 
 ---
 
-## v4.4 - Modus 4: Hotel-Scan
+## v4.4 - Modus 4: Hotel-Scan ✅
 
-### Ziel: Versteckte Kameras + aktive Geräte erkennen
+### hotel_scan.py (neu)
+- [x] WiFi Beacon Frame Analyse (pcap_engine.read_pcap_beacons)
+- [x] SSID + BSSID + Kanal + RSSI erfassen
+- [x] Bekannte Kamera-SSIDs erkennen (30+ Muster)
+- [x] Versteckte SSIDs markieren
+- [x] OUI-Abgleich mit Kamera-Herstellern
 
-### WiFi Beacon Frame Analyse
-- [ ] pcap_engine.py: Beacon Frames (0x80) auswerten
-- [ ] SSID + BSSID + Kanal + Signalstärke (RSSI) erfassen
-- [ ] Bekannte Kamera-SSIDs erkennen:
-      IPCamera, ESP_, Hikvision, Dahua, Reolink, EZVIZ, Wyze...
-- [ ] Versteckte SSIDs (leere SSID in Beacon) markieren
-- [ ] OUI-Abgleich mit Kamera-Herstellern
+### Kamera OUI Datenbank (intern in hotel_scan.py + bt_fingerprint.py)
+- [x] Hikvision, Dahua, Reolink, Wyze, Arlo, Ring, Nest
+- [x] Espressif (ESP32) = häufig in DIY/Billig-Kameras
+- [x] Realtek, MediaTek IoT Chips
 
-### Kamera OUI Datenbank (camera_oui.json)
-- [ ] Hikvision, Dahua, Reolink, Wyze, Arlo, Ring, Nest
-- [ ] Espressif (ESP32) = häufig in DIY/Billig-Kameras
-- [ ] Realtek, MediaTek IoT Chips
+### pcap_engine.py erweitert
+- [x] read_pcap_beacons() → Beacon Frames (0x80) auswerten
+- [x] RSSI via Radiotap-Header-Parser
 
 ### BLE Advertisement Scan (Hotel-Modus)
-- [ ] Längerer BLE Scan (60s)
-- [ ] Advertisement Data auslesen
-- [ ] Bekannte Kamera/IoT BLE UUIDs erkennen
-- [ ] Espressif, Realtek, MediaTek OUIs markieren
+- [x] 60s BLE Scan (konfigurierbar via --bt-duration)
+- [x] Advertisement Data via btmon
+- [x] Kamera/IoT BLE UUIDs erkennen
+- [x] Espressif, Realtek OUIs markieren
 
 ### Report Hotel-Scan
-- [ ] Separate Sektion "Verdächtige Kameras"
-- [ ] RSSI anzeigen → Näherungsschätzung
-- [ ] WiGLE: BSSID nachschlagen
-- [ ] LED rot + Vibration bei Kamera-Verdacht
+- [x] Separate Sektion "Verdächtige Kameras" (🔴 KRITISCH)
+- [x] RSSI + Entfernungsschätzung
+- [x] LED rot (5x) + Vibration bei Kamera-Verdacht
 
 ### Modus-Auswahl
-- [ ] Modus 4 = Hotel-Scan (Beacon + BLE Advertisement)
-- [ ] payload.sh: NUMBER_PICKER auf 0-4 erweitern
+- [x] Modus 4 = Hotel-Scan (Beacon + BLE Advertisement)
+- [x] payload.sh: NUMBER_PICKER auf 0-4 erweitert
 
 ---
 
@@ -126,8 +128,7 @@
       → Workaround: min_appearances dynamisch, empfehle 2+ Runden
 - [ ] WiGLE Section leer wenn keine Treffer
       → Zeigt "Keine Treffer (Wildcard Probes)"
-- [ ] BT OUI Lookup noch nicht in bt_scanner.py
-      → Kommt mit v4.4
+- [x] BT OUI Lookup in bt_scanner.py → erledigt v4.4
 
 ---
 

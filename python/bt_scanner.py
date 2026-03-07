@@ -1,12 +1,92 @@
 #!/usr/bin/env python3
 """
 bt_scanner.py - Bluetooth Scanner für Chasing Your Tail NG
-Scannt BT Classic + BLE Geräte und korreliert mit WiFi-Probes
+Scannt BT Classic + BLE Geräte und korreliert mit WiFi-Probes.
+v4.4: BLE Advertisement Data (UUIDs, Appearance) via btmon + Fingerprinting.
 """
-import subprocess, threading, time, logging, os, json
+import subprocess, threading, time, logging, os, json, re
 from datetime import datetime
 
 log = logging.getLogger('CYT-BT')
+
+# ============================================================
+# BLE ADVERTISEMENT DATA (btmon-basiert)
+# ============================================================
+
+def _scan_btmon(duration=20):
+    """
+    Lauscht auf BLE Advertisement Data via btmon.
+    Extrahiert Service UUIDs, Appearance Code, Name und RSSI.
+    Gibt {mac_lower: {name, uuids, appearance, rssi}} zurück.
+    """
+    adv_data = {}
+    current  = None  # aktuelle MAC
+
+    try:
+        proc = subprocess.Popen(
+            ['btmon', '-t'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+    except FileNotFoundError:
+        log.warning('btmon nicht gefunden – UUID-Scan übersprungen')
+        return adv_data
+
+    start = time.time()
+    try:
+        while time.time() - start < duration:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            line = line.rstrip()
+
+            # Neue Advertising-Report Adresse
+            m = re.match(r'\s+Address:\s+([0-9A-Fa-f:]{17})', line)
+            if m:
+                current = m.group(1).lower()
+                if current not in adv_data:
+                    adv_data[current] = {
+                        'name': '', 'uuids': [], 'appearance': None, 'rssi': None
+                    }
+                continue
+
+            if current is None:
+                continue
+
+            # Gerätename
+            m = re.match(r'\s+Name \((?:complete|short)\):\s+(.+)', line)
+            if m:
+                adv_data[current]['name'] = m.group(1).strip()
+                continue
+
+            # 16-bit Service UUIDs (btmon zeigt: Unknown (0xXXXX) oder Name (0xXXXX))
+            m = re.search(r'\(0x([0-9a-fA-F]{4})\)', line)
+            if m and ('UUID' in line or 'Service' in line or 'Unknown' in line):
+                uuid = m.group(1).lower()
+                if uuid not in adv_data[current]['uuids']:
+                    adv_data[current]['uuids'].append(uuid)
+                continue
+
+            # Appearance
+            m = re.match(r'\s+Appearance:\s+0x([0-9a-fA-F]+)', line)
+            if m:
+                adv_data[current]['appearance'] = int(m.group(1), 16)
+                continue
+
+            # RSSI
+            m = re.match(r'\s+RSSI:\s+(-?\d+)\s+dBm', line)
+            if m:
+                adv_data[current]['rssi'] = int(m.group(1))
+
+    except Exception as e:
+        log.error(f'btmon Fehler: {e}')
+    finally:
+        proc.terminate()
+        proc.wait()
+
+    log.info(f'btmon: Advertisement Data für {len(adv_data)} BLE-Geräte gesammelt')
+    return adv_data
 
 # ============================================================
 # BLUETOOTH SCANNER
@@ -78,26 +158,35 @@ def scan_ble(duration=15):
         log.error(f'BLE Fehler: {e}')
     return devices
 
-def scan_bluetooth(duration=15):
-    """Scannt BT Classic und BLE parallel."""
+def scan_bluetooth(duration=15, with_fingerprint=True, oui_db=None):
+    """
+    Scannt BT Classic und BLE parallel.
+    v4.4: Optional btmon für UUID/Appearance Fingerprinting.
+    """
     log.info('Starte Bluetooth-Scan...')
 
-    results = {'classic': {}, 'ble': {}}
+    results = {'classic': {}, 'ble': {}, 'adv': {}}
 
-    # BT Classic + BLE parallel
     def run_classic():
         results['classic'] = scan_bt_classic(duration)
 
     def run_ble():
         results['ble'] = scan_ble(duration)
 
-    t_classic = threading.Thread(target=run_classic, daemon=True)
-    t_ble     = threading.Thread(target=run_ble, daemon=True)
+    def run_btmon():
+        results['adv'] = _scan_btmon(duration)
 
-    t_classic.start()
-    t_ble.start()
-    t_classic.join(timeout=duration+5)
-    t_ble.join(timeout=duration+5)
+    threads = [
+        threading.Thread(target=run_classic, daemon=True),
+        threading.Thread(target=run_ble,     daemon=True),
+    ]
+    if with_fingerprint:
+        threads.append(threading.Thread(target=run_btmon, daemon=True))
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=duration + 10)
 
     # Zusammenführen
     all_devices = {}
@@ -108,9 +197,56 @@ def scan_bluetooth(duration=15):
         else:
             all_devices[mac]['type'] = 'classic+ble'
 
+    # Advertisement-Daten einmergen (Name, UUIDs, Appearance, RSSI)
+    for mac, adv in results['adv'].items():
+        if mac not in all_devices:
+            all_devices[mac] = {'type': 'ble', 'first_seen': datetime.now().isoformat()}
+        dev = all_devices[mac]
+        if adv['name'] and not dev.get('name'):
+            dev['name'] = adv['name']
+        dev['uuids']      = adv['uuids']
+        dev['appearance'] = adv['appearance']
+        if adv['rssi'] is not None:
+            dev['rssi'] = adv['rssi']
+
+    # OUI-Lookup + Fingerprinting
+    if with_fingerprint:
+        _apply_fingerprinting(all_devices, oui_db)
+
     log.info(f'BT-Scan: {len(all_devices)} Geräte gefunden '
              f'({len(results["classic"])} Classic, {len(results["ble"])} BLE)')
     return all_devices
+
+
+def _apply_fingerprinting(devices, oui_db=None):
+    """Wendet bt_fingerprint auf alle Geräte an (in-place)."""
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from bt_fingerprint import fingerprint_device
+        from oui_lookup import lookup
+    except ImportError as e:
+        log.warning(f'Fingerprinting nicht verfügbar: {e}')
+        return
+
+    for mac, dev in devices.items():
+        vendor = lookup(mac, oui_db) if oui_db else ''
+        fp = fingerprint_device(
+            mac,
+            name=dev.get('name', ''),
+            uuids=dev.get('uuids', []),
+            appearance_code=dev.get('appearance'),
+            oui_vendor=vendor,
+        )
+        dev['vendor']      = vendor
+        dev['risk']        = fp['risk']
+        dev['has_mic']     = fp['has_mic']
+        dev['has_camera']  = fp['has_camera']
+        dev['device_type'] = fp['device_type']
+        dev['fp_flags']    = fp['flags']
+        if fp['risk'] in ('medium', 'high'):
+            log.info(f'BT Fingerprint [{fp["risk"]}] {mac} '
+                     f'({dev.get("name","?")}): {", ".join(fp["flags"][:2])}')
 
 # ============================================================
 # KORRELATION WiFi <-> Bluetooth
@@ -242,8 +378,18 @@ if __name__ == '__main__':
     else:
         log.info('Kein GPS-Fix')
 
+    # OUI-DB laden (optional, für BT OUI-Lookup)
+    oui_db = None
+    try:
+        import sys as _sys, os as _os
+        _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+        from oui_lookup import load_oui_db
+        oui_db = load_oui_db()
+    except Exception:
+        pass
+
     # BT scannen
-    bt_devices = scan_bluetooth(duration=args.duration)
+    bt_devices = scan_bluetooth(duration=args.duration, oui_db=oui_db)
 
     # Korrelation
     correlated = correlate_wifi_bt({}, bt_devices)
@@ -259,4 +405,10 @@ if __name__ == '__main__':
 
     print(f'\nGefunden: {len(bt_devices)} BT-Geräte')
     for mac, data in bt_devices.items():
-        print(f'  {mac} | {data["type"]:10} | {data["name"]}')
+        risk  = data.get('risk', '-')
+        emoji = {'none': '🟢', 'low': '🔵', 'medium': '🟡', 'high': '🔴'}.get(risk, '⚪')
+        mic   = '🎤' if data.get('has_mic') else ''
+        cam   = '📷' if data.get('has_camera') else ''
+        print(f'  {emoji} {mac} | {data.get("type","?"):10} | '
+              f'{data.get("name","?"):20} | {data.get("device_type",""):20} '
+              f'| {risk:6} {mic}{cam}')

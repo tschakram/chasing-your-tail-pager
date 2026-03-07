@@ -79,6 +79,41 @@ def filter_scans(scans, ignore_macs, ignore_ssids):
 
     return filtered
 
+def _ensure_bt_fingerprinting(bt_devices, oui_db=None):
+    """
+    Wendet bt_fingerprint auf BT-Geräte an, falls noch nicht erfolgt.
+    Gibt ein neues dict zurück (Original unverändert).
+    """
+    try:
+        from bt_fingerprint import fingerprint_device
+        from oui_lookup import lookup
+    except ImportError:
+        return bt_devices
+
+    result = {}
+    for mac, dev in bt_devices.items():
+        d = dict(dev)
+        if 'risk' not in d:
+            vendor = lookup(mac, oui_db) if oui_db else ''
+            fp = fingerprint_device(
+                mac,
+                name=d.get('name', ''),
+                uuids=d.get('uuids', []),
+                appearance_code=d.get('appearance'),
+                oui_vendor=vendor,
+            )
+            d.update({
+                'vendor':      vendor,
+                'risk':        fp['risk'],
+                'has_mic':     fp['has_mic'],
+                'has_camera':  fp['has_camera'],
+                'device_type': fp['device_type'],
+                'fp_flags':    fp['flags'],
+            })
+        result[mac] = d
+    return result
+
+
 def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None, wigle_client=None, suspects_db=None, watch_list=None, cur_lat=None, cur_lon=None):
     os.makedirs(output_dir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -200,21 +235,61 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
                 f.write(f'- `{mac}`\n')
 
         if bt_devices:
+            # Fingerprinting anwenden falls nicht schon im bt_scanner erfolgt
+            bt_fingerprinted = _ensure_bt_fingerprinting(bt_devices, oui_db)
+
+            # Kritische BT-Geräte (high/medium) separat hervorheben
+            bt_critical = {
+                mac: d for mac, d in bt_fingerprinted.items()
+                if d.get('risk') in ('high', 'medium')
+            }
+            if bt_critical:
+                f.write('\n## 🔴 Bluetooth Verdächtige (Fingerprint)\n\n')
+                for mac, d in sorted(bt_critical.items(),
+                                     key=lambda x: x[1].get('risk', ''),
+                                     reverse=True):
+                    emoji = {'high': '🔴', 'medium': '🟡'}.get(d.get('risk'), '⚪')
+                    f.write(f'### {emoji} `{mac}` — {d.get("name","?")}\n')
+                    f.write(f'- **Typ:** {d.get("device_type", "Unbekannt")}\n')
+                    f.write(f'- **Hersteller:** {d.get("vendor", "Unbekannt")}\n')
+                    f.write(f'- **Risiko:** {d.get("risk", "?")}\n')
+                    if d.get('has_mic'):
+                        f.write('- **🎤 Mikrofon:** ja\n')
+                    if d.get('has_camera'):
+                        f.write('- **📷 Kamera:** ja\n')
+                    for flag in d.get('fp_flags', []):
+                        f.write(f'- {flag}\n')
+                    # WiFi-Korrelation
+                    for wmac in suspicious:
+                        if mac[:8].lower() == wmac[:8].lower():
+                            f.write(f'- **⚠️ OUI-Korrelation WiFi:** `{wmac}`\n')
+                            break
+                        if mac.lower() == wmac.lower():
+                            f.write(f'- **🔴 Exakt WiFi:** `{wmac}`\n')
+                            break
+                    if d.get('uuids'):
+                        f.write(f'- **UUIDs:** {", ".join(d["uuids"])}\n')
+                    f.write('\n')
+
             f.write('\n## Bluetooth Geräte\n\n')
-            f.write('| MAC | Name | Typ | Korrelation WiFi |\n')
-            f.write('|-----|------|-----|---------------------|\n')
-            for mac, d in bt_devices.items():
-                # OUI-Match mit verdächtigen WiFi-Geräten prüfen
+            f.write('| MAC | Name | Typ | Risiko | Mic | Cam | WiFi-Korr. |\n')
+            f.write('|-----|------|-----|--------|-----|-----|------------|\n')
+            for mac, d in bt_fingerprinted.items():
                 corr = '-'
                 for wmac in suspicious:
                     if mac[:8].lower() == wmac[:8].lower():
-                        corr = f'⚠️ OUI-Match: `{wmac}`'
+                        corr = f'⚠️ `{wmac}`'
                         break
                     if mac.lower() == wmac.lower():
-                        corr = f'🔴 Exakt: `{wmac}`'
+                        corr = f'🔴 `{wmac}`'
                         break
+                risk_em = {'none': '🟢', 'low': '🔵', 'medium': '🟡',
+                           'high': '🔴'}.get(d.get('risk', 'none'), '⚪')
+                mic = '🎤' if d.get('has_mic') else '-'
+                cam = '📷' if d.get('has_camera') else '-'
                 f.write(f'| `{mac}` | {d.get("name","?")} | '
-                        f'{d.get("type","?")} | {corr} |\n')
+                        f'{d.get("device_type", d.get("type","?"))} | '
+                        f'{risk_em} {d.get("risk","?")} | {mic} | {cam} | {corr} |\n')
 
     log.info(f'Report: {path}')
     print(f'REPORT_PATH:{path}')
