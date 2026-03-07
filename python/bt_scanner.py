@@ -3,6 +3,7 @@
 bt_scanner.py - Bluetooth Scanner für Chasing Your Tail NG
 Scannt BT Classic + BLE Geräte und korreliert mit WiFi-Probes.
 v4.4: BLE Advertisement Data (UUIDs, Appearance) via btmon + Fingerprinting.
+v4.5: SDP-Abfrage für BT Classic Geräte (sdptool browse).
 """
 import subprocess, threading, time, logging, os, json, re
 from datetime import datetime
@@ -87,6 +88,43 @@ def _scan_btmon(duration=20):
 
     log.info(f'btmon: Advertisement Data für {len(adv_data)} BLE-Geräte gesammelt')
     return adv_data
+
+# ============================================================
+# SDP QUERY (BT Classic)
+# ============================================================
+
+def _sdp_query(mac, timeout=10):
+    """
+    Fragt Service UUIDs eines BT Classic Geräts via sdptool browse ab.
+    Gibt Liste von UUID-Hex-Strings zurück (z.B. ['111e', '110b', '1108']).
+    Gibt [] zurück wenn Gerät nicht erreichbar oder sdptool fehlt.
+    """
+    uuids = []
+    try:
+        result = subprocess.run(
+            ['sdptool', 'browse', mac.upper()],
+            capture_output=True, text=True, timeout=timeout
+        )
+        # Parst Zeilen wie: "Audio Sink" (0x110b)
+        # oder: Unknown (0x111e)
+        for line in result.stdout.splitlines():
+            m = re.search(r'\(0x([0-9a-fA-F]{4})\)', line)
+            if m:
+                uuid = m.group(1).lower()
+                if uuid not in uuids:
+                    uuids.append(uuid)
+        if uuids:
+            log.info(f'SDP {mac}: {len(uuids)} UUIDs gefunden: {uuids}')
+        else:
+            log.debug(f'SDP {mac}: keine UUIDs (Gerät evtl. außer Reichweite)')
+    except subprocess.TimeoutExpired:
+        log.debug(f'SDP {mac}: Timeout nach {timeout}s')
+    except FileNotFoundError:
+        log.warning('sdptool nicht gefunden – SDP-Abfrage übersprungen')
+    except Exception as e:
+        log.debug(f'SDP {mac}: Fehler: {e}')
+    return uuids
+
 
 # ============================================================
 # BLUETOOTH SCANNER
@@ -208,6 +246,21 @@ def scan_bluetooth(duration=15, with_fingerprint=True, oui_db=None):
         dev['appearance'] = adv['appearance']
         if adv['rssi'] is not None:
             dev['rssi'] = adv['rssi']
+
+    # SDP-Abfrage für BT Classic Geräte ohne UUIDs (v4.5)
+    if with_fingerprint:
+        classic_macs = [
+            mac for mac, dev in all_devices.items()
+            if dev.get('type') in ('classic', 'classic+ble')
+            and not dev.get('uuids')
+        ]
+        if classic_macs:
+            log.info(f'SDP-Abfrage für {len(classic_macs)} Classic-Geräte...')
+            for mac in classic_macs:
+                sdp_uuids = _sdp_query(mac)
+                if sdp_uuids:
+                    all_devices[mac]['uuids'] = sdp_uuids
+                    all_devices[mac]['sdp_queried'] = True
 
     # OUI-Lookup + Fingerprinting
     if with_fingerprint:
