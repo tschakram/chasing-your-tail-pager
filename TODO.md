@@ -107,7 +107,7 @@
 ### BT Ignore-Liste ✅
 - [x] analyze_pcap.py: BT-Geräte gegen ignore_macs filtern
 - [x] hotel_scan.py: Ignore-Liste laden + WiFi/BLE filtern
-- [x] JBL Flip 5 `aa:bb:cc:dd:ee:01` in mac_list.json auf Pager eingetragen
+- [x] JBL Flip 5 in mac_list.json auf Pager eingetragen
 
 ### Watch-List Management vom Display ✅
 - [x] python/watchlist_add.py: CLI-Wrapper für WatchList.add()
