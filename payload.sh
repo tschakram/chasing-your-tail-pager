@@ -322,7 +322,8 @@ sleep 2
 # ============================================================
 # ERGEBNIS ANZEIGEN
 # ============================================================
-LATEST_REPORT=$(ls -t "$REPORT_DIR"/*.md 2>/dev/null | head -1)
+# Nach Dateiname sortieren (nicht Dateizeitstempel) - robust gegen falsche Systemzeit
+LATEST_REPORT=$(ls "$REPORT_DIR"/*.md 2>/dev/null | sort -r | head -1)
 
 LOG ""
 LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
