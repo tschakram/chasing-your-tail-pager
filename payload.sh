@@ -6,6 +6,10 @@
 # Version: 3.0
 # Based on: ArgeliusLabs/Chasing-Your-Tail-NG (MIT)
 
+# OpenWrt: mmc-Pakete nicht im Standard-PATH (Pager Framework = non-login shell)
+export PATH="/mmc/usr/bin:/mmc/usr/sbin:/mmc/bin:/mmc/sbin:$PATH"
+export LD_LIBRARY_PATH="/mmc/usr/lib:/mmc/lib:${LD_LIBRARY_PATH:-}"
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
