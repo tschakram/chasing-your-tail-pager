@@ -11,6 +11,7 @@ Based on: [ArgeliusLabs/Chasing-Your-Tail-NG](https://github.com/ArgeliusLabs/Ch
 
 Detects whether you are being followed – by analysing recurring WiFi Probe Requests, optional Bluetooth scanning, GPS tracking, OUI vendor lookup and WiGLE geolocation.
 
+> **v4.6:** Quick Start dialog (1=Standard / 2=Manual), zone detection via GPS · IP geolocation · manual picker, standard mode WiFi+BT (no GPS required), auto-cleanup of old reports/PCAPs, Watch-List display improvements.
 > **v4.5:** Native Pineapple Pager Framework – no manual tcpdump, no custom channel hopping, no framebuffer hacking. Full Bluetooth + GPS + WiGLE integration. BT fingerprinting, Hotel-Scan mode, Watch-List management from display.
 
 ---
@@ -18,8 +19,9 @@ Detects whether you are being followed – by analysing recurring WiFi Probe Req
 ### How it works
 
 1. **Dependency check** – python3 installed automatically via `opkg` if missing
-2. **Mode selection** – choose WiFi only, WiFi+GPS, WiFi+BT or all modules
-3. **Configuration** – rounds and duration selectable via NUMBER_PICKER
+2. **Quick Start** – `1=Standard` (WiFi+BT, 2 rounds, configured duration) or `2=Manual` for full configuration
+3. **Zone detection** – GPS fix → Haversine match, fallback IP geolocation (ip-api.com), fallback manual picker
+4. **Configuration** – rounds and duration selectable via NUMBER_PICKER (Manual mode only)
 4. **Channel hopping** – `PINEAPPLE_HOPPING_START` activates built-in hopping
 5. **PCAP capture** – `WIFI_PCAP_START` captures Probe Requests natively
 6. **BT scan** – parallel Bluetooth Classic + BLE scan (optional)
@@ -200,6 +202,7 @@ chasing_your_tail/
     ├── wigle_lookup.py     ← WiGLE API + GPS nearby-search
     ├── watch_list.py       ← Static/dynamic device watch-list
     ├── watchlist_add.py    ← CLI wrapper for Watch-List from display
+    ├── zone_check.py       ← Zone detection (GPS Haversine / IP geolocation / manual)
     └── cleanup.py          ← Auto-cleanup of old reports/PCAPs/logs
 ```
 
@@ -339,6 +342,7 @@ Analyses only **publicly broadcast radio signals** (Probe Requests on open ISM b
 
 Erkennt ob du verfolgt wirst – durch Analyse wiederkehrender WiFi-Probe-Requests, optionalen Bluetooth-Scan, GPS-Tracking, OUI-Herstellersuche und WiGLE-Geolokalisierung.
 
+> **v4.6:** Quick-Start-Dialog (1=Standard / 2=Manuell), Zonenerkennung via GPS · IP-Geolokalisierung · manueller Picker, Standard-Modus WiFi+BT (kein GPS erforderlich), automatische Bereinigung alter Reports/PCAPs, Watch-List-Anzeige verbessert.
 > **v4.5:** Natives Pineapple Pager Framework – kein manueller tcpdump, kein eigenes Channel-Hopping, kein Framebuffer-Hacking. Vollständige Bluetooth + GPS + WiGLE Integration. BT-Fingerprinting, Hotel-Scan-Modus, Watch-List-Verwaltung direkt vom Display.
 
 ---
@@ -346,8 +350,9 @@ Erkennt ob du verfolgt wirst – durch Analyse wiederkehrender WiFi-Probe-Reques
 ### Wie es funktioniert
 
 1. **Dependency-Check** – python3 wird automatisch via `opkg` installiert
-2. **Modus-Auswahl** – nur WiFi, WiFi+GPS, WiFi+BT oder alle Module
-3. **Konfiguration** – Runden und Dauer per NUMBER_PICKER wählbar
+2. **Quick-Start** – `1=Standard` (WiFi+BT, 2 Runden, konfigurierte Dauer) oder `2=Manuell` für volle Konfiguration
+3. **Zonenerkennung** – GPS-Fix → Haversine-Abgleich, Fallback IP-Geolokalisierung (ip-api.com), Fallback manueller Picker
+4. **Konfiguration** – Runden und Dauer per NUMBER_PICKER wählbar (nur Modus Manuell)
 4. **Channel-Hopping** – `PINEAPPLE_HOPPING_START` aktiviert eingebautes Hopping
 5. **PCAP-Capture** – `WIFI_PCAP_START` erfasst Probe-Requests nativ
 6. **BT-Scan** – paralleler Bluetooth Classic + BLE Scan (optional)
