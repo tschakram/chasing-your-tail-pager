@@ -142,7 +142,7 @@ def run_cleanup(config_path, dry_run=False):
               f'{total_free // 1024}KB freigegeben')
     else:
         log.info('Cleanup: nichts zu tun')
-        print('CLEANUP:0 Dateien gelöscht')
+        print('CLEANUP:Alles aktuell')
 
     return total_del, total_free
 
