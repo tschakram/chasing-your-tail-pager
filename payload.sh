@@ -669,7 +669,7 @@ if [ -f "$LATEST_REPORT" ]; then
         done < "$WATCH_TMP"
         LOG "  0. Überspringen"
         LOG ""
-        sleep 5
+        sleep 10
 
         # Letzte 3 Oktette der MAC ins NUMBER_PICKER-Label (eindeutig, passt zum LOG)
         WL_LABEL="0=Skip "
