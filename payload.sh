@@ -189,11 +189,13 @@ LOG green "▶ Scan gestartet!"
 # ============================================================
 PCAP_FILES=()
 BT_SCAN_FILES=()
+TCPDUMP_5G_PID=""
 SCAN_START_TIME=$(date +%s)
 
 cleanup() {
     PINEAPPLE_HOPPING_STOP 2>/dev/null
     WIFI_PCAP_STOP 2>/dev/null
+    [ -n "$TCPDUMP_5G_PID" ] && kill "$TCPDUMP_5G_PID" 2>/dev/null
     LED off
 }
 trap cleanup EXIT INT TERM
@@ -237,6 +239,13 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
     LED blue blink
     WIFI_PCAP_START
 
+    # 5/6 GHz Capture auf wlan1mon parallel starten
+    # wlan1mon hoppt via PINEAPPLE_HOPPING_START über alle Bänder (2.4+5+6 GHz)
+    # WIFI_PCAP_START nutzt nur wlan0mon (2.4 GHz, Kanal 1 fest)
+    PCAP_5G_FILE="$PCAP_DIR/scan_${TS}_round${ROUND}_5g.pcap"
+    tcpdump -i wlan1mon -w "$PCAP_5G_FILE" 2>/dev/null &
+    TCPDUMP_5G_PID=$!
+
     # BT-Scan im Hintergrund (wenn aktiviert)
     BT_PID=""
     BT_FILE=""
@@ -269,6 +278,12 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
 
     # PCAP stoppen und sichern
     WIFI_PCAP_STOP
+    # 5/6 GHz Capture stoppen (tcpdump flusht PCAP bei SIGTERM)
+    if [ -n "$TCPDUMP_5G_PID" ]; then
+        kill "$TCPDUMP_5G_PID" 2>/dev/null
+        wait "$TCPDUMP_5G_PID" 2>/dev/null
+        TCPDUMP_5G_PID=""
+    fi
     # BT-Scan abwarten
     if [ -n "$BT_PID" ]; then
         wait $BT_PID 2>/dev/null
@@ -290,7 +305,12 @@ for ROUND in $(seq 1 "$SCAN_ROUNDS"); do
         cp "$LATEST_PCAP" "$PCAP_FILE"
         PCAP_FILES+=("$PCAP_FILE")
         PROBE_COUNT=$(tcpdump -r "$PCAP_FILE" 2>/dev/null | wc -l)
-        LOG green "✓ Runde $ROUND: $PROBE_COUNT Probes"
+        if [ -s "$PCAP_5G_FILE" ]; then
+            PROBE_5G=$(tcpdump -r "$PCAP_5G_FILE" 2>/dev/null | wc -l)
+            LOG green "✓ Runde $ROUND: ${PROBE_COUNT} Frames (2.4GHz) + ${PROBE_5G} (5/6GHz)"
+        else
+            LOG green "✓ Runde $ROUND: $PROBE_COUNT Frames (2.4GHz)"
+        fi
     else
         LOG yellow "⚠ Keine neue PCAP gefunden"
     fi
@@ -335,8 +355,8 @@ BT_LIST=$(ls -t "$LOOT_DIR"/bt_scan_*.json 2>/dev/null | grep -v "test" | tr "\n
 
 if [ "$HOTEL_SCAN" = true ]; then
     # ── Modus 4: Hotel-Scan ────────────────────────────────
-    # Letztes PCAP für Beacon-Analyse verwenden
-    HOTEL_PCAP=$(echo "$PCAP_LIST" | tr ',' '\n' | tail -1)
+    # Letztes 2.4 GHz PCAP für Beacon-Analyse (explizit _5g.pcap ausschließen)
+    HOTEL_PCAP=$(echo "$PCAP_LIST" | tr ',' '\n' | grep -v "_5g\.pcap" | tail -1)
     HOTEL_BT=""
     if [ -n "$BT_LIST" ]; then
         HOTEL_BT=$(echo "$BT_LIST" | tr ',' '\n' | head -1)
