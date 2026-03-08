@@ -132,9 +132,46 @@ LOG "  Zone:    wird abgefragt"
 LOG ""
 sleep 3
 
-CONFIRMATION_DIALOG "Konfiguration anpassen?"
+CONFIRMATION_DIALOG "Standard-Konfiguration OK?"
 if [ $? -eq 0 ]; then
-    # ── Ja: Manuell konfigurieren ─────────────────────────
+    # ── Ja: Standard-Config, nur Zone abfragen ────────────
+    SCAN_MODE=2
+    USE_GPS=false
+    USE_BT=true
+    HOTEL_SCAN=false
+    SCAN_ROUNDS=2
+    SCAN_DURATION=$CFG_DURATION
+    GPS_AVAILABLE=false
+    LOG green "  ✓ WiFi + Bluetooth (Standard)"
+    sleep 1
+
+    # Zone immer abfragen
+    LOG ""
+    LOG "Standort..."
+    ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" --config "$CONFIG_FILE" 2>/dev/null)
+    case "$ZONE_RESULT" in
+        ZONE_IP:*)
+            ZONE_NAME=$(echo "$ZONE_RESULT" | cut -d: -f2)
+            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
+            ZONE_CITY=$(echo "$ZONE_RESULT" | cut -d: -f4)
+            CONFIRMATION_DIALOG "IP: $ZONE_CITY Zone: $ZONE_NAME (~${ZONE_DIST}m) OK?"
+            if [ $? -eq 0 ]; then
+                CURRENT_ZONE="$ZONE_NAME"
+                LOG green "📍 Zone: $CURRENT_ZONE (IP)"
+            else
+                CURRENT_ZONE=$(_zone_picker)
+                [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
+            fi
+            ;;
+        *)
+            CURRENT_ZONE=$(_zone_picker)
+            [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
+            ;;
+    esac
+    sleep 1
+
+else
+    # ── Nein: Manuell konfigurieren ───────────────────────
     LOG ""
     LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     LOG blue "     Scan-Module"
@@ -241,43 +278,6 @@ if [ $? -eq 0 ]; then
         $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
             SCAN_DURATION=$CFG_DURATION ;;
     esac
-
-else
-    # ── Nein: Standard-Config, nur Zone abfragen ──────────
-    SCAN_MODE=2
-    USE_GPS=false
-    USE_BT=true
-    HOTEL_SCAN=false
-    SCAN_ROUNDS=2
-    SCAN_DURATION=$CFG_DURATION
-    GPS_AVAILABLE=false
-    LOG green "  ✓ WiFi + Bluetooth (Standard)"
-    sleep 1
-
-    # Zone immer abfragen
-    LOG ""
-    LOG "Standort..."
-    ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" --config "$CONFIG_FILE" 2>/dev/null)
-    case "$ZONE_RESULT" in
-        ZONE_IP:*)
-            ZONE_NAME=$(echo "$ZONE_RESULT" | cut -d: -f2)
-            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
-            ZONE_CITY=$(echo "$ZONE_RESULT" | cut -d: -f4)
-            CONFIRMATION_DIALOG "IP: $ZONE_CITY Zone: $ZONE_NAME (~${ZONE_DIST}m) OK?"
-            if [ $? -eq 0 ]; then
-                CURRENT_ZONE="$ZONE_NAME"
-                LOG green "📍 Zone: $CURRENT_ZONE (IP)"
-            else
-                CURRENT_ZONE=$(_zone_picker)
-                [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
-            fi
-            ;;
-        *)
-            CURRENT_ZONE=$(_zone_picker)
-            [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
-            ;;
-    esac
-    sleep 1
 fi
 
 LOG "Runden: $SCAN_ROUNDS  |  Dauer: ${SCAN_DURATION}s"
