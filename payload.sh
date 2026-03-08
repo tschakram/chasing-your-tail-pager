@@ -355,15 +355,14 @@ BT_LIST=$(ls -t "$LOOT_DIR"/bt_scan_*.json 2>/dev/null | grep -v "test" | tr "\n
 
 if [ "$HOTEL_SCAN" = true ]; then
     # ── Modus 4: Hotel-Scan ────────────────────────────────
-    # Letztes 2.4 GHz PCAP für Beacon-Analyse (explizit _5g.pcap ausschließen)
-    HOTEL_PCAP=$(echo "$PCAP_LIST" | tr ',' '\n' | grep -v "_5g\.pcap" | tail -1)
+    # Alle PCAPe (2.4GHz + 5/6GHz) übergeben → hotel_scan.py merged Beacons
     HOTEL_BT=""
     if [ -n "$BT_LIST" ]; then
         HOTEL_BT=$(echo "$BT_LIST" | tr ',' '\n' | head -1)
     fi
 
     ANALYSIS_OUTPUT=$(python3 "$PYTHON_DIR/hotel_scan.py" \
-        --pcap "$HOTEL_PCAP" \
+        --pcap "$PCAP_LIST" \
         ${HOTEL_BT:+--bt-scan "$HOTEL_BT"} \
         --output-dir "$REPORT_DIR" 2>&1)
 
