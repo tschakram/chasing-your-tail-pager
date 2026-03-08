@@ -666,13 +666,13 @@ if [ -f "$LATEST_REPORT" ]; then
         LOG ""
         WAIT_FOR_BUTTON_PRESS
 
-        # Geräte-Namen gekürzt direkt ins NUMBER_PICKER-Label
+        # Letzte 3 Oktette der MAC ins NUMBER_PICKER-Label (eindeutig, passt zum LOG)
         WL_LABEL="0=Skip "
         wi=1
         while IFS='|' read -r wl_mac wl_vendor; do
             [ -z "$wl_mac" ] && continue
-            short=$(echo "$wl_vendor" | cut -c1-8)
-            WL_LABEL="${WL_LABEL}${wi}=${short} "
+            mac_suffix=$(echo "$wl_mac" | cut -c10-)
+            WL_LABEL="${WL_LABEL}${wi}=${mac_suffix} "
             wi=$((wi+1))
         done < "$WATCH_TMP"
         WATCH_PICK=$(NUMBER_PICKER "${WL_LABEL% }:" 0)
