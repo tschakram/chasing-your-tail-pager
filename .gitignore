@@ -1,24 +1,42 @@
-# Echte Config mit API-Keys nicht einchecken
+# ═══════════════════════════════════════════════════════════════
+# OPSEC: Dateien die NIEMALS ins Repo dürfen
+# Alle Pfade relativ zum Repo-Root (kein /root/... absoluter Pfad!)
+# ═══════════════════════════════════════════════════════════════
+
+# ── Konfiguration (API-Keys, GPS-Koordinaten) ──────────────────
 config.json
 
-# Loot-Daten (gesammelte Scan-Ergebnisse)
+# ── Persönliche Geräte-Listen (echte MACs + SSIDs) ────────────
+# Nutze ignore_lists/mac_list.example.json als Vorlage
+ignore_lists/mac_list.json
+ignore_lists/ssid_list.json
+
+# ── Beobachtungsdaten (GPS, MACs, Verdächtige) ────────────────
+watch_list.json
+suspects_db.json
+gps_track.csv
+
+# ── Loot / Scan-Ergebnisse ────────────────────────────────────
 loot/
 *.kismet
+*.pcap
+*.pcapng
+bt_scan_*.json
+
+# ── Logs ──────────────────────────────────────────────────────
 *.log
 
-# Python Cache
+# ── Cache-Dateien ─────────────────────────────────────────────
+oui_cache.json
+wigle_cache.json
+
+# ── Python Cache ──────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 
-# Ignore-Listen schützen (persönliche Daten)
-/root/loot/chasing_your_tail/ignore_lists/
-
-# Persönliche Beobachtungs- und Verdächtige-Daten (GPS, MACs)
-watch_list.json
-suspects_db.json
-# OUI und WiGLE Cache
-oui_cache.json
-wigle_cache.json
-# GPS Track
-gps_track.csv
+# ── Sonstiges ─────────────────────────────────────────────────
+*.bak
+*.tmp
+nul

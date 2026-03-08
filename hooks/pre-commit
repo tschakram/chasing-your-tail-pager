@@ -1,0 +1,116 @@
+#!/bin/sh
+# ============================================================
+# OPSEC Pre-Commit Hook – Chasing Your Tail NG
+#
+# Blockiert Commits mit sensitiven Daten:
+#   • Verbotene Dateien (config.json, watch_list.json, ...)
+#   • Loot / PCAP / Log-Dateien
+#   • GPS-Koordinaten != 0.000000 in JSON/MD/SH
+#   • WiGLE API-Credentials (nicht-leere Strings)
+#   • Echte MAC-Adressen in Doku/Config-Dateien
+#
+# Aktivieren: git config core.hooksPath hooks
+# Umgehen (nur wenn sicher!): git commit --no-verify
+# ============================================================
+
+FAIL=0
+STAGED=$(git diff --cached --name-only 2>/dev/null)
+
+fail() { printf 'OPSEC FEHLER:   %s\n' "$*" >&2; FAIL=1; }
+warn() { printf 'OPSEC WARNUNG:  %s\n' "$*" >&2; FAIL=1; }
+
+# ────────────────────────────────────────────────────────────
+# 1. Explizit verbotene Dateien
+#    Diese Dateien dürfen NIEMALS ins Repo – auch wenn sie
+#    versehentlich nicht im .gitignore stehen.
+# ────────────────────────────────────────────────────────────
+for f in \
+    config.json \
+    watch_list.json \
+    suspects_db.json \
+    oui_cache.json \
+    wigle_cache.json \
+    gps_track.csv \
+    ignore_lists/mac_list.json \
+    ignore_lists/ssid_list.json
+do
+    printf '%s\n' "$STAGED" | grep -qxF "$f" && \
+        fail "Verbotene Datei staged: $f  →  git reset HEAD $f"
+done
+
+# ────────────────────────────────────────────────────────────
+# 2. Loot / PCAP / BT-Scan / Log-Dateien
+# ────────────────────────────────────────────────────────────
+LOOT=$(printf '%s\n' "$STAGED" | \
+    grep -E '\.(pcap|pcapng|kismet|log)$|^bt_scan_.*\.json$|^loot/')
+if [ -n "$LOOT" ]; then
+    warn "Loot/PCAP/Log-Datei staged:"
+    printf '%s\n' "$LOOT" | while IFS= read -r f; do
+        printf '  → %s\n' "$f" >&2
+    done
+fi
+
+# ────────────────────────────────────────────────────────────
+# 3. GPS-Koordinaten in JSON / MD / SH
+#    Erlaubt: 0.000000 | Bounds: -90/90 (lat), -180/180 (lon)
+# ────────────────────────────────────────────────────────────
+GPS_DIFF=$(git diff --cached -- '*.json' '*.md' '*.sh' 2>/dev/null | \
+    grep '^+' | grep -v '^+++')
+
+GPS_LAT=$(printf '%s\n' "$GPS_DIFF" | \
+    grep -oE '"lat"[[:space:]]*:[[:space:]]*-?[0-9]+\.[0-9]+' | \
+    grep -vE '(0\.0+|-?90\.0+)$')
+[ -n "$GPS_LAT" ] && warn "GPS-Latitude im Commit (erlaubt: 0.000000):
+$(printf '%s\n' "$GPS_LAT" | sed 's/^/  → /')"
+
+GPS_LON=$(printf '%s\n' "$GPS_DIFF" | \
+    grep -oE '"lon"[[:space:]]*:[[:space:]]*-?[0-9]+\.[0-9]+' | \
+    grep -vE '(0\.0+|-?180\.0+)$')
+[ -n "$GPS_LON" ] && warn "GPS-Longitude im Commit (erlaubt: 0.000000):
+$(printf '%s\n' "$GPS_LON" | sed 's/^/  → /')"
+
+# ────────────────────────────────────────────────────────────
+# 4. WiGLE API-Credentials (nicht-leere Strings)
+# ────────────────────────────────────────────────────────────
+API=$(git diff --cached 2>/dev/null | grep '^+' | \
+    grep -E '"api_(name|token)"[[:space:]]*:[[:space:]]*"[^"]+"' | \
+    grep -vE '"api_(name|token)"[[:space:]]*:[[:space:]]*""')
+[ -n "$API" ] && fail "WiGLE API-Credentials im Commit!"
+
+# ────────────────────────────────────────────────────────────
+# 5. Echte MAC-Adressen in Doku/Config-Dateien (.md .sh .json)
+#    Python-Code (.py) wird NICHT geprüft (Test-MACs in Code ok).
+#
+#    Bekannte Platzhalter-MACs (GROSSSCHREIBUNG und lower):
+#      AA:BB:CC:DD:EE:FF  11:22:33:44:55:66
+#      BB:CC:DD:EE:FF:AA  CC:DD:EE:FF:AA:BB
+#      00:00:00:00:00:00  FF:FF:FF:FF:FF:FF
+#
+#    Weitere Platzhalter hier eintragen falls nötig.
+# ────────────────────────────────────────────────────────────
+DOC_DIFF=$(git diff --cached -- '*.md' '*.sh' '*.json' 2>/dev/null | \
+    grep '^+' | grep -v '^+++')
+
+MACS=$(printf '%s\n' "$DOC_DIFF" | \
+    grep -oiE '([0-9a-f]{2}:){5}[0-9a-f]{2}' | \
+    grep -ivE \
+'^(aa:bb:cc:dd:ee:ff|11:22:33:44:55:66|bb:cc:dd:ee:ff:aa|cc:dd:ee:ff:aa:bb|00:00:00:00:00:00|ff:ff:ff:ff:ff:ff)$')
+
+if [ -n "$MACS" ]; then
+    warn "Mögliche echte MAC-Adresse in Doku/Config:
+$(printf '%s\n' "$MACS" | sed 's/^/  → /')
+  Falls Platzhalter: Zeile hooks/pre-commit MACS-Whitelist ergänzen.
+  Falls echtes Gerät: MAC entfernen, dann erneut committen."
+fi
+
+# ────────────────────────────────────────────────────────────
+# Ergebnis
+# ────────────────────────────────────────────────────────────
+if [ "$FAIL" -eq 1 ]; then
+    printf '\n==> COMMIT ABGEBROCHEN (OPSEC-Verletzung).\n' >&2
+    printf '    Nur wenn du sicher bist: git commit --no-verify\n\n' >&2
+    exit 1
+fi
+
+printf 'OPSEC-Check OK\n'
+exit 0
