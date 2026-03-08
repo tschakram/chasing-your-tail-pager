@@ -107,6 +107,26 @@ CAMERA_WIFI_OUIS = {
 # WIFI BEACON ANALYSE
 # ============================================================
 
+def _merge_beacons(merged, new_beacons):
+    """Fügt Beacons aus einem weiteren PCAP in das bestehende Dict zusammen."""
+    for bssid, data in new_beacons.items():
+        if bssid not in merged:
+            merged[bssid] = dict(data)
+        else:
+            m = merged[bssid]
+            if data['ssid'] and not m['ssid']:
+                m['ssid'] = data['ssid']
+            if data['channel'] is not None and m['channel'] is None:
+                m['channel'] = data['channel']
+            if data['rssi'] is not None:
+                if m['rssi'] is None or data['rssi'] > m['rssi']:
+                    m['rssi'] = data['rssi']
+            m['beacon_count'] += data['beacon_count']
+            if data['hidden']:
+                m['hidden'] = True
+    return merged
+
+
 def _rssi_to_distance(rssi):
     """Grobe Schätzung: Entfernung in Metern aus RSSI."""
     if rssi is None:
@@ -375,7 +395,7 @@ def save_hotel_report(wifi_suspects, ble_all, ble_suspects, output_dir):
 def main():
     parser = argparse.ArgumentParser(description='Hotel-Scan: Kamera-Erkennung')
     parser.add_argument('--pcap',       required=True,
-                        help='PCAP-Datei mit Beacon Frames')
+                        help='PCAP-Datei(en) mit Beacon Frames (kommagetrennt: 2.4GHz,5G)')
     parser.add_argument('--bt-scan',    default=None,
                         help='BT-Scan JSON (aus bt_scanner.py) oder "live"')
     parser.add_argument('--bt-duration', type=int, default=60,
@@ -409,12 +429,17 @@ def main():
     except Exception:
         pass
 
-    # WiFi Beacon-Analyse
-    log.info(f'Lese Beacon Frames: {args.pcap}')
-    beacons       = read_pcap_beacons(args.pcap)
+    # WiFi Beacon-Analyse (alle PCAP-Dateien zusammenführen)
+    pcap_files = [p.strip() for p in args.pcap.split(',')
+                  if p.strip() and os.path.exists(p.strip())]
+    beacons = {}
+    for pcap_path in pcap_files:
+        log.info(f'Lese Beacon Frames: {pcap_path}')
+        _merge_beacons(beacons, read_pcap_beacons(pcap_path))
+    log.info(f'WiFi: {len(beacons)} BSSIDs aus {len(pcap_files)} PCAP(s)')
     wifi_suspects = [s for s in analyze_beacons(beacons, oui_db)
                      if s['bssid'].lower() not in ignore_macs]
-    log.info(f'WiFi: {len(beacons)} Beacons, {len(wifi_suspects)} Verdächtige')
+    log.info(f'WiFi Verdächtige: {len(wifi_suspects)}')
 
     # BLE Scan
     ble_all      = {}
