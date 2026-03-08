@@ -142,6 +142,95 @@ if [ "$USE_GPS" = true ]; then
 fi
 
 # ============================================================
+# ZONE CHECK
+# Zeigt bekannten Standort oder fragt manuell wenn kein GPS.
+# ============================================================
+CURRENT_ZONE=""
+
+# Hilfsfunktion: manuellen Standort-Picker anzeigen
+_zone_picker() {
+    ZPICK_TMP=$(mktemp /tmp/cyt_zp_XXXXXX 2>/dev/null || echo "/tmp/cyt_zp_$$")
+    python3 "$PYTHON_DIR/watchlist_add.py" \
+        --list-zones --config "$CONFIG_FILE" 2>/dev/null \
+        | grep "^ZONE:" | grep -v "^ZONE:Aktueller GPS" | cut -d: -f2- > "$ZPICK_TMP"
+    printf 'Mobil-Modus\n' >> "$ZPICK_TMP"
+
+    ZPICK_REPORT=$(mktemp /tmp/cyt_zpr_XXXXXX 2>/dev/null || echo "/tmp/cyt_zpr_$$")
+    {
+        printf '# Aktuellen Standort wählen\n\n'
+        zi=1
+        while IFS= read -r zname; do
+            printf '**%d.** %s\n\n' "$zi" "$zname"
+            zi=$((zi+1))
+        done < "$ZPICK_TMP"
+    } > "$ZPICK_REPORT"
+    SHOW_REPORT "$ZPICK_REPORT"
+    rm -f "$ZPICK_REPORT"
+
+    ZONE_COUNT=$(wc -l < "$ZPICK_TMP" | tr -d ' ')
+    ZPICK_IDX=$(NUMBER_PICKER "Standort (1-${ZONE_COUNT}):" 1)
+    ZPICK_NAME=$(sed -n "${ZPICK_IDX}p" "$ZPICK_TMP" 2>/dev/null)
+    rm -f "$ZPICK_TMP"
+    echo "${ZPICK_NAME:-Mobil-Modus}"
+}
+
+if [ "$GPS_AVAILABLE" = true ]; then
+    # GPS-Fix vorhanden → automatische Zonenprüfung per Haversine
+    ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" \
+        --config "$CONFIG_FILE" \
+        --lat "$GPS_LAT" --lon "$GPS_LON" 2>/dev/null)
+    case "$ZONE_RESULT" in
+        ZONE_GPS:*)
+            CURRENT_ZONE=$(echo "$ZONE_RESULT" | cut -d: -f2)
+            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
+            LOG green "📍 Zone: $CURRENT_ZONE (${ZONE_DIST}m)"
+            ;;
+        *)
+            LOG "📍 Kein bekannter Standort - Mobil-Modus"
+            ;;
+    esac
+    sleep 1
+else
+    # Kein GPS → IP-Geo versuchen, dann manuell
+    LOG ""
+    LOG "Standort-Erkennung..."
+    ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" \
+        --config "$CONFIG_FILE" 2>/dev/null)
+    case "$ZONE_RESULT" in
+        ZONE_IP:*)
+            ZONE_NAME=$(echo "$ZONE_RESULT" | cut -d: -f2)
+            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
+            ZONE_CITY=$(echo "$ZONE_RESULT" | cut -d: -f4)
+            CONFIRMATION_DIALOG "IP-Standort: $ZONE_CITY\nZone erkannt: $ZONE_NAME (~${ZONE_DIST}m)\nBestätigen?"
+            if [ $? -eq 0 ]; then
+                CURRENT_ZONE="$ZONE_NAME"
+                LOG green "📍 Zone: $CURRENT_ZONE (IP-bestätigt)"
+            else
+                CURRENT_ZONE=$(_zone_picker)
+                [ "$CURRENT_ZONE" = "Mobil-Modus" ] && \
+                    LOG "📍 Mobil-Modus" || LOG green "📍 Zone: $CURRENT_ZONE (manuell)"
+            fi
+            ;;
+        ZONE_IP_NEAR:*)
+            ZONE_NAME=$(echo "$ZONE_RESULT" | cut -d: -f2)
+            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
+            ZONE_CITY=$(echo "$ZONE_RESULT" | cut -d: -f4)
+            LOG yellow "📍 IP-Standort: $ZONE_CITY (~${ZONE_DIST}m zu $ZONE_NAME)"
+            CURRENT_ZONE=$(_zone_picker)
+            [ "$CURRENT_ZONE" = "Mobil-Modus" ] && \
+                LOG "📍 Mobil-Modus" || LOG green "📍 Zone: $CURRENT_ZONE (manuell)"
+            ;;
+        *)
+            # Kein GPS, kein IP → manuell
+            CURRENT_ZONE=$(_zone_picker)
+            [ "$CURRENT_ZONE" = "Mobil-Modus" ] && \
+                LOG "📍 Mobil-Modus" || LOG green "📍 Zone: $CURRENT_ZONE (manuell)"
+            ;;
+    esac
+    sleep 1
+fi
+
+# ============================================================
 # SCAN KONFIGURATION
 # ============================================================
 LOG ""
