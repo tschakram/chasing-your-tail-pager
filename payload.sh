@@ -30,7 +30,7 @@ CONFIG_FILE="/root/payloads/user/reconnaissance/chasing_your_tail/config.json"
 mkdir -p "$PCAP_DIR" "$REPORT_DIR"
 
 LOG "=============================="
-LOG "  Chasing Your Tail NG v4.4"
+LOG "  Chasing Your Tail NG v4.6"
 LOG "=============================="
 LOG ""
 LOG "Surveillance Detection"
@@ -233,27 +233,54 @@ fi
 # ============================================================
 # SCAN KONFIGURATION
 # ============================================================
-LOG ""
-LOG "Scan-Konfiguration:"
-LOG ""
 
-# Anzahl Runden wählen
-SCAN_ROUNDS=$(NUMBER_PICKER "Scan-Runden:" 1)
-case $? in
-    $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
-        SCAN_ROUNDS=2
-        ;;
-esac
-LOG "Runden: $SCAN_ROUNDS"
+# Standard-Werte aus config.json lesen
+CFG_DURATION=$(python3 "$PYTHON_DIR/../config.json" 2>/dev/null || echo 60)
+CFG_DURATION=$(python3 -c "
+import json
+try:
+    c=json.load(open('$CONFIG_FILE'))
+    print(c.get('timing',{}).get('check_interval',60))
+except: print(60)
+" 2>/dev/null)
+CFG_DURATION=${CFG_DURATION:-60}
 
-# Scan-Dauer wählen
-SCAN_DURATION=$(NUMBER_PICKER "Dauer pro Runde (Sek):" 30)
-case $? in
-    $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
-        SCAN_DURATION=120
-        ;;
+# Standard-Modus-Bezeichnung
+case "$SCAN_MODE" in
+    0) CFG_MODE_NAME="0 (WiFi only)" ;;
+    1) CFG_MODE_NAME="1 (WiFi+GPS)" ;;
+    2) CFG_MODE_NAME="2 (WiFi+BT)" ;;
+    3) CFG_MODE_NAME="3 (Vollständig)" ;;
+    4) CFG_MODE_NAME="4 (Hotel-Scan)" ;;
+    *) CFG_MODE_NAME="$SCAN_MODE" ;;
 esac
-LOG "Dauer: ${SCAN_DURATION}s"
+
+# Quick-Start oder manuelle Konfiguration?
+CONFIRMATION_DIALOG "Standard-Config:\n  Modus:   $CFG_MODE_NAME\n  Runden:  2\n  Dauer:   ${CFG_DURATION}s/Runde\n\nKonfiguration anpassen?"
+if [ $? -eq 0 ]; then
+    # Manuell konfigurieren
+    LOG ""
+    LOG "Scan-Konfiguration:"
+    LOG ""
+
+    SCAN_ROUNDS=$(NUMBER_PICKER "Scan-Runden:" 1)
+    case $? in
+        $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+            SCAN_ROUNDS=2 ;;
+    esac
+
+    SCAN_DURATION=$(NUMBER_PICKER "Dauer pro Runde (Sek):" "$CFG_DURATION")
+    case $? in
+        $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+            SCAN_DURATION=$CFG_DURATION ;;
+    esac
+else
+    # Standard-Config
+    SCAN_ROUNDS=2
+    SCAN_DURATION=$CFG_DURATION
+fi
+
+LOG "Runden: $SCAN_ROUNDS  |  Dauer: ${SCAN_DURATION}s"
 
 # min_appearances dynamisch: ~1 pro 60s, min 3, max 15
 MIN_APPEARANCES=$(( SCAN_DURATION / 60 + 2 ))
@@ -626,21 +653,16 @@ if [ -f "$LATEST_REPORT" ]; then
         LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
         LOG ""
 
-        # Kandidaten-Report erstellen und anzeigen (SHOW_REPORT scrollbar,
-        # bleibt sichtbar bis Nutzer navigiert → dann NUMBER_PICKER)
-        WATCH_REPORT_TMP=$(mktemp /tmp/cyt_wr_XXXXXX 2>/dev/null || echo "/tmp/cyt_wr_$$")
-        {
-            printf '# Watch-List Kandidaten\n\n'
-            i=1
-            while IFS='|' read -r wl_mac wl_vendor; do
-                [ -z "$wl_mac" ] && continue
-                printf '## %d. %s\n`%s`\n\n' "$i" "$wl_vendor" "$wl_mac"
-                i=$((i+1))
-            done < "$WATCH_TMP"
-            printf '---\n**0** = Überspringen\n'
-        } > "$WATCH_REPORT_TMP"
-        SHOW_REPORT "$WATCH_REPORT_TMP"
-        rm -f "$WATCH_REPORT_TMP"
+        # Kandidaten im LOG anzeigen, dann NUMBER_PICKER
+        i=1
+        while IFS='|' read -r wl_mac wl_vendor; do
+            [ -z "$wl_mac" ] && continue
+            LOG "  $i. $wl_vendor"
+            LOG "     $wl_mac"
+            i=$((i+1))
+        done < "$WATCH_TMP"
+        LOG "  0. Überspringen"
+        LOG ""
 
         WATCH_PICK=$(NUMBER_PICKER "Gerät-Nr. (0=Skip):" 0)
 
