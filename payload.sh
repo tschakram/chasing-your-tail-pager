@@ -101,18 +101,15 @@ _zone_picker() {
     SHOW_REPORT "$ZPICK_REPORT"
     rm -f "$ZPICK_REPORT"
 
-    # Zonen als LOG-Zeilen wiederholen – bleiben hinter NUMBER_PICKER sichtbar
-    LOG ""
-    LOG blue "  Standort wählen:"
+    # Zonen-Namen direkt ins NUMBER_PICKER-Label einbauen
+    ZONE_COUNT=$(wc -l < "$ZPICK_TMP" | tr -d ' ')
+    ZPICK_LABEL=""
     zi=1
     while IFS= read -r zname; do
-        LOG "  $zi. $zname"
+        ZPICK_LABEL="${ZPICK_LABEL}${zi}=${zname} "
         zi=$((zi+1))
     done < "$ZPICK_TMP"
-    LOG ""
-
-    ZONE_COUNT=$(wc -l < "$ZPICK_TMP" | tr -d ' ')
-    ZPICK_IDX=$(NUMBER_PICKER "Standort (1-${ZONE_COUNT}):" 1)
+    ZPICK_IDX=$(NUMBER_PICKER "${ZPICK_LABEL% }:" 1)
     ZPICK_NAME=$(sed -n "${ZPICK_IDX}p" "$ZPICK_TMP" 2>/dev/null)
     rm -f "$ZPICK_TMP"
     echo "${ZPICK_NAME:-Mobil-Modus}"
