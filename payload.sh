@@ -101,6 +101,16 @@ _zone_picker() {
     SHOW_REPORT "$ZPICK_REPORT"
     rm -f "$ZPICK_REPORT"
 
+    # Zonen als LOG-Zeilen wiederholen – bleiben hinter NUMBER_PICKER sichtbar
+    LOG ""
+    LOG blue "  Standort wählen:"
+    zi=1
+    while IFS= read -r zname; do
+        LOG "  $zi. $zname"
+        zi=$((zi+1))
+    done < "$ZPICK_TMP"
+    LOG ""
+
     ZONE_COUNT=$(wc -l < "$ZPICK_TMP" | tr -d ' ')
     ZPICK_IDX=$(NUMBER_PICKER "Standort (1-${ZONE_COUNT}):" 1)
     ZPICK_NAME=$(sed -n "${ZPICK_IDX}p" "$ZPICK_TMP" 2>/dev/null)
