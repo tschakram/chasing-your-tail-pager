@@ -80,74 +80,8 @@ CLEANUP_MSG=$(echo "$CLEANUP_OUT" | grep "^CLEANUP:" | cut -d: -f2-)
 [ -n "$CLEANUP_MSG" ] && LOG green "🗑 Cleanup: $CLEANUP_MSG"
 
 # ============================================================
-# SCAN-MODUS AUSWÄHLEN
+# ZONE-PICKER HILFSFUNKTION
 # ============================================================
-LOG ""
-LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-LOG blue "     Scan-Module"
-LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-LOG ""
-LOG "0 = Nur WiFi"
-LOG "1 = WiFi + GPS"
-LOG "2 = WiFi + Bluetooth"
-LOG "3 = Alle Module"
-LOG "4 = Hotel-Scan (Kamera)"
-LOG ""
-sleep 5
-SCAN_MODE=$(NUMBER_PICKER "Scan-Modus (0-4):" 2)
-case $? in
-    $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
-        SCAN_MODE=2
-        ;;
-esac
-
-# Module aktivieren
-USE_GPS=false
-USE_BT=false
-HOTEL_SCAN=false
-case "$SCAN_MODE" in
-    1) USE_GPS=true ;;
-    2) USE_BT=true ;;
-    3) USE_GPS=true; USE_BT=true ;;
-    4) HOTEL_SCAN=true; USE_BT=true ;;
-esac
-
-LOG ""
-LOG "Module:"
-[ "$USE_GPS"      = true ] && LOG green "  ✓ GPS aktiv"             || LOG "  ✗ GPS deaktiviert"
-[ "$USE_BT"       = true ] && LOG green "  ✓ Bluetooth aktiv"       || LOG "  ✗ Bluetooth deaktiviert"
-[ "$HOTEL_SCAN"   = true ] && LOG green "  ✓ Hotel-Scan aktiv"      || LOG "  ✗ Hotel-Scan deaktiviert"
-LOG green "  ✓ WiFi aktiv"
-sleep 2
-
-# ============================================================
-# GPS CHECK
-# ============================================================
-GPS_AVAILABLE=false
-if [ "$USE_GPS" = true ]; then
-    LOG ""
-    LOG "Prüfe GPS..."
-    GPS_RAW=$(GPS_GET)
-    GPS_LAT=$(echo "$GPS_RAW" | awk '{print $1}')
-    GPS_LON=$(echo "$GPS_RAW" | awk '{print $2}')
-
-    if [ "$GPS_LAT" = "0" ] || [ -z "$GPS_LAT" ]; then
-        LOG yellow "⚠ Kein GPS-Fix"
-        LOG "Weiter ohne GPS..."
-    else
-        LOG green "✓ GPS-Fix: $GPS_LAT, $GPS_LON"
-        GPS_AVAILABLE=true
-    fi
-    sleep 1
-fi
-
-# ============================================================
-# ZONE CHECK
-# Zeigt bekannten Standort oder fragt manuell wenn kein GPS.
-# ============================================================
-CURRENT_ZONE=""
-
-# Hilfsfunktion: manuellen Standort-Picker anzeigen
 _zone_picker() {
     ZPICK_TMP=$(mktemp /tmp/cyt_zp_XXXXXX 2>/dev/null || echo "/tmp/cyt_zp_$$")
     python3 "$PYTHON_DIR/watchlist_add.py" \
@@ -174,68 +108,9 @@ _zone_picker() {
     echo "${ZPICK_NAME:-Mobil-Modus}"
 }
 
-if [ "$GPS_AVAILABLE" = true ]; then
-    # GPS-Fix vorhanden → automatische Zonenprüfung per Haversine
-    ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" \
-        --config "$CONFIG_FILE" \
-        --lat "$GPS_LAT" --lon "$GPS_LON" 2>/dev/null)
-    case "$ZONE_RESULT" in
-        ZONE_GPS:*)
-            CURRENT_ZONE=$(echo "$ZONE_RESULT" | cut -d: -f2)
-            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
-            LOG green "📍 Zone: $CURRENT_ZONE (${ZONE_DIST}m)"
-            ;;
-        *)
-            LOG "📍 Kein bekannter Standort - Mobil-Modus"
-            ;;
-    esac
-    sleep 1
-else
-    # Kein GPS → IP-Geo versuchen, dann manuell
-    LOG ""
-    LOG "Standort-Erkennung..."
-    ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" \
-        --config "$CONFIG_FILE" 2>/dev/null)
-    case "$ZONE_RESULT" in
-        ZONE_IP:*)
-            ZONE_NAME=$(echo "$ZONE_RESULT" | cut -d: -f2)
-            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
-            ZONE_CITY=$(echo "$ZONE_RESULT" | cut -d: -f4)
-            CONFIRMATION_DIALOG "IP-Standort: $ZONE_CITY\nZone erkannt: $ZONE_NAME (~${ZONE_DIST}m)\nBestätigen?"
-            if [ $? -eq 0 ]; then
-                CURRENT_ZONE="$ZONE_NAME"
-                LOG green "📍 Zone: $CURRENT_ZONE (IP-bestätigt)"
-            else
-                CURRENT_ZONE=$(_zone_picker)
-                [ "$CURRENT_ZONE" = "Mobil-Modus" ] && \
-                    LOG "📍 Mobil-Modus" || LOG green "📍 Zone: $CURRENT_ZONE (manuell)"
-            fi
-            ;;
-        ZONE_IP_NEAR:*)
-            ZONE_NAME=$(echo "$ZONE_RESULT" | cut -d: -f2)
-            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
-            ZONE_CITY=$(echo "$ZONE_RESULT" | cut -d: -f4)
-            LOG yellow "📍 IP-Standort: $ZONE_CITY (~${ZONE_DIST}m zu $ZONE_NAME)"
-            CURRENT_ZONE=$(_zone_picker)
-            [ "$CURRENT_ZONE" = "Mobil-Modus" ] && \
-                LOG "📍 Mobil-Modus" || LOG green "📍 Zone: $CURRENT_ZONE (manuell)"
-            ;;
-        *)
-            # Kein GPS, kein IP → manuell
-            CURRENT_ZONE=$(_zone_picker)
-            [ "$CURRENT_ZONE" = "Mobil-Modus" ] && \
-                LOG "📍 Mobil-Modus" || LOG green "📍 Zone: $CURRENT_ZONE (manuell)"
-            ;;
-    esac
-    sleep 1
-fi
-
 # ============================================================
-# SCAN KONFIGURATION
+# QUICK START: Standard-Config anzeigen, dann anpassen?
 # ============================================================
-
-# Standard-Werte aus config.json lesen
-CFG_DURATION=$(python3 "$PYTHON_DIR/../config.json" 2>/dev/null || echo 60)
 CFG_DURATION=$(python3 -c "
 import json
 try:
@@ -245,39 +120,164 @@ except: print(60)
 " 2>/dev/null)
 CFG_DURATION=${CFG_DURATION:-60}
 
-# Standard-Modus-Bezeichnung
-case "$SCAN_MODE" in
-    0) CFG_MODE_NAME="0 (WiFi only)" ;;
-    1) CFG_MODE_NAME="1 (WiFi+GPS)" ;;
-    2) CFG_MODE_NAME="2 (WiFi+BT)" ;;
-    3) CFG_MODE_NAME="3 (Vollständig)" ;;
-    4) CFG_MODE_NAME="4 (Hotel-Scan)" ;;
-    *) CFG_MODE_NAME="$SCAN_MODE" ;;
-esac
+LOG ""
+LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+LOG blue "   Standard-Konfiguration"
+LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+LOG ""
+LOG "  Modus:   2 (WiFi + BT)"
+LOG "  Runden:  2"
+LOG "  Dauer:   ${CFG_DURATION}s / Runde"
+LOG "  Zone:    wird abgefragt"
+LOG ""
+sleep 3
 
-# Quick-Start oder manuelle Konfiguration?
-CONFIRMATION_DIALOG "Standard-Config:\n  Modus:   $CFG_MODE_NAME\n  Runden:  2\n  Dauer:   ${CFG_DURATION}s/Runde\n\nKonfiguration anpassen?"
+CONFIRMATION_DIALOG "Konfiguration anpassen?"
 if [ $? -eq 0 ]; then
-    # Manuell konfigurieren
+    # ── Ja: Manuell konfigurieren ─────────────────────────
     LOG ""
-    LOG "Scan-Konfiguration:"
+    LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    LOG blue "     Scan-Module"
+    LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     LOG ""
+    LOG "0 = Nur WiFi"
+    LOG "1 = WiFi + GPS"
+    LOG "2 = WiFi + Bluetooth"
+    LOG "3 = Alle Module"
+    LOG "4 = Hotel-Scan"
+    LOG ""
+    sleep 5
+    SCAN_MODE=$(NUMBER_PICKER "Scan-Modus (0-4):" 2)
+    case $? in
+        $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+            SCAN_MODE=2 ;;
+    esac
 
-    SCAN_ROUNDS=$(NUMBER_PICKER "Scan-Runden:" 1)
+    USE_GPS=false
+    USE_BT=false
+    HOTEL_SCAN=false
+    case "$SCAN_MODE" in
+        1) USE_GPS=true ;;
+        2) USE_BT=true ;;
+        3) USE_GPS=true; USE_BT=true ;;
+        4) HOTEL_SCAN=true; USE_BT=true ;;
+    esac
+    LOG ""
+    LOG "Module:"
+    [ "$USE_GPS"    = true ] && LOG green "  ✓ GPS"        || LOG "  ✗ GPS"
+    [ "$USE_BT"     = true ] && LOG green "  ✓ Bluetooth"  || LOG "  ✗ Bluetooth"
+    [ "$HOTEL_SCAN" = true ] && LOG green "  ✓ Hotel-Scan" || LOG "  ✗ Hotel-Scan"
+    LOG green "  ✓ WiFi"
+    sleep 2
+
+    # GPS Check
+    GPS_AVAILABLE=false
+    if [ "$USE_GPS" = true ]; then
+        LOG ""
+        LOG "Prüfe GPS..."
+        GPS_RAW=$(GPS_GET)
+        GPS_LAT=$(echo "$GPS_RAW" | awk '{print $1}')
+        GPS_LON=$(echo "$GPS_RAW" | awk '{print $2}')
+        if [ "$GPS_LAT" = "0" ] || [ -z "$GPS_LAT" ]; then
+            LOG yellow "⚠ Kein GPS-Fix"
+        else
+            LOG green "✓ GPS-Fix: $GPS_LAT, $GPS_LON"
+            GPS_AVAILABLE=true
+        fi
+        sleep 1
+    fi
+
+    # Zone Check
+    CURRENT_ZONE=""
+    if [ "$GPS_AVAILABLE" = true ]; then
+        ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" \
+            --config "$CONFIG_FILE" --lat "$GPS_LAT" --lon "$GPS_LON" 2>/dev/null)
+        case "$ZONE_RESULT" in
+            ZONE_GPS:*)
+                CURRENT_ZONE=$(echo "$ZONE_RESULT" | cut -d: -f2)
+                ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
+                LOG green "📍 Zone: $CURRENT_ZONE (${ZONE_DIST}m)"
+                ;;
+            *)
+                CURRENT_ZONE=$(_zone_picker)
+                [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
+                ;;
+        esac
+    else
+        LOG ""
+        LOG "Standort..."
+        ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" --config "$CONFIG_FILE" 2>/dev/null)
+        case "$ZONE_RESULT" in
+            ZONE_IP:*)
+                ZONE_NAME=$(echo "$ZONE_RESULT" | cut -d: -f2)
+                ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
+                ZONE_CITY=$(echo "$ZONE_RESULT" | cut -d: -f4)
+                CONFIRMATION_DIALOG "IP: $ZONE_CITY Zone: $ZONE_NAME (~${ZONE_DIST}m) OK?"
+                if [ $? -eq 0 ]; then
+                    CURRENT_ZONE="$ZONE_NAME"
+                    LOG green "📍 Zone: $CURRENT_ZONE (IP)"
+                else
+                    CURRENT_ZONE=$(_zone_picker)
+                    [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
+                fi
+                ;;
+            *)
+                CURRENT_ZONE=$(_zone_picker)
+                [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
+                ;;
+        esac
+    fi
+    sleep 1
+
+    # Runden + Dauer
+    LOG ""
+    SCAN_ROUNDS=$(NUMBER_PICKER "Scan-Runden:" 2)
     case $? in
         $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
             SCAN_ROUNDS=2 ;;
     esac
-
-    SCAN_DURATION=$(NUMBER_PICKER "Dauer pro Runde (Sek):" "$CFG_DURATION")
+    SCAN_DURATION=$(NUMBER_PICKER "Dauer (Sek):" "$CFG_DURATION")
     case $? in
         $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
             SCAN_DURATION=$CFG_DURATION ;;
     esac
+
 else
-    # Standard-Config
+    # ── Nein: Standard-Config, nur Zone abfragen ──────────
+    SCAN_MODE=2
+    USE_GPS=false
+    USE_BT=true
+    HOTEL_SCAN=false
     SCAN_ROUNDS=2
     SCAN_DURATION=$CFG_DURATION
+    GPS_AVAILABLE=false
+    LOG green "  ✓ WiFi + Bluetooth (Standard)"
+    sleep 1
+
+    # Zone immer abfragen
+    LOG ""
+    LOG "Standort..."
+    ZONE_RESULT=$(python3 "$PYTHON_DIR/zone_check.py" --config "$CONFIG_FILE" 2>/dev/null)
+    case "$ZONE_RESULT" in
+        ZONE_IP:*)
+            ZONE_NAME=$(echo "$ZONE_RESULT" | cut -d: -f2)
+            ZONE_DIST=$(echo "$ZONE_RESULT" | cut -d: -f3)
+            ZONE_CITY=$(echo "$ZONE_RESULT" | cut -d: -f4)
+            CONFIRMATION_DIALOG "IP: $ZONE_CITY Zone: $ZONE_NAME (~${ZONE_DIST}m) OK?"
+            if [ $? -eq 0 ]; then
+                CURRENT_ZONE="$ZONE_NAME"
+                LOG green "📍 Zone: $CURRENT_ZONE (IP)"
+            else
+                CURRENT_ZONE=$(_zone_picker)
+                [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
+            fi
+            ;;
+        *)
+            CURRENT_ZONE=$(_zone_picker)
+            [ "$CURRENT_ZONE" = "Mobil-Modus" ] && LOG "📍 Mobil" || LOG green "📍 $CURRENT_ZONE"
+            ;;
+    esac
+    sleep 1
 fi
 
 LOG "Runden: $SCAN_ROUNDS  |  Dauer: ${SCAN_DURATION}s"
@@ -592,14 +592,7 @@ LOG ""
 # ============================================================
 # WARTEN AUF BEENDEN
 # ============================================================
-# Report anzeigen?
-CONFIRMATION_DIALOG "Report anzeigen?"
-case $? in
-    $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
-        SHOW_REPORT=false ;;
-    *)
-        SHOW_REPORT=true ;;
-esac
+SHOW_REPORT=true
 if [ "$SHOW_REPORT" = true ]; then
     if [ -f "$LATEST_REPORT" ]; then
         LOG ""
@@ -663,6 +656,7 @@ if [ -f "$LATEST_REPORT" ]; then
         done < "$WATCH_TMP"
         LOG "  0. Überspringen"
         LOG ""
+        WAIT_FOR_BUTTON_PRESS
 
         WATCH_PICK=$(NUMBER_PICKER "Gerät-Nr. (0=Skip):" 0)
 
