@@ -94,10 +94,10 @@ LOG "3 = Alle Module"
 LOG "4 = Hotel-Scan (Kamera)"
 LOG ""
 sleep 5
-SCAN_MODE=$(NUMBER_PICKER "Scan-Modus (0-4):" 0)
+SCAN_MODE=$(NUMBER_PICKER "Scan-Modus (0-4):" 2)
 case $? in
     $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
-        SCAN_MODE=0
+        SCAN_MODE=2
         ;;
 esac
 
