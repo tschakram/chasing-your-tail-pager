@@ -141,7 +141,8 @@ LOG ""
 sleep 3
 
 CONFIRMATION_DIALOG "Standard-Konfiguration OK?"
-if [ $? -eq 0 ]; then
+QSTART=$?
+if [ "$QSTART" -eq 0 ]; then
     # ── Ja: Standard-Config, nur Zone abfragen ────────────
     SCAN_MODE=2
     USE_GPS=false
@@ -180,6 +181,7 @@ if [ $? -eq 0 ]; then
 
 else
     # ── Nein: Manuell konfigurieren ───────────────────────
+    LOG yellow "⚙ Manuelle Konfiguration..."
     LOG ""
     LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     LOG blue "     Scan-Module"
@@ -191,7 +193,7 @@ else
     LOG "3 = Alle Module"
     LOG "4 = Hotel-Scan"
     LOG ""
-    sleep 5
+    sleep 2
     SCAN_MODE=$(NUMBER_PICKER "Scan-Modus (0-4):" 2)
     case $? in
         $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
