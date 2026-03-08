@@ -140,10 +140,13 @@ LOG "  Zone:    wird abgefragt"
 LOG ""
 sleep 3
 
-CONFIRMATION_DIALOG "Standard-Konfiguration OK?"
-QSTART=$?
-if [ "$QSTART" -eq 0 ]; then
-    # ── Ja: Standard-Config, nur Zone abfragen ────────────
+QSTART=$(NUMBER_PICKER "1=Standard 2=Manuell:" 1)
+case $? in
+    $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+        QSTART=1 ;;
+esac
+if [ "$QSTART" -eq 1 ]; then
+    # ── 1: Standard-Config, nur Zone abfragen ─────────────
     SCAN_MODE=2
     USE_GPS=false
     USE_BT=true
@@ -180,7 +183,7 @@ if [ "$QSTART" -eq 0 ]; then
     sleep 1
 
 else
-    # ── Nein: Manuell konfigurieren ───────────────────────
+    # ── 2: Manuell konfigurieren ──────────────────────────
     LOG yellow "⚙ Manuelle Konfiguration..."
     LOG ""
     LOG blue "━━━━━━━━━━━━━━━━━━━━━━━━━━"
