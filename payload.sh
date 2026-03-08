@@ -101,12 +101,13 @@ _zone_picker() {
     SHOW_REPORT "$ZPICK_REPORT"
     rm -f "$ZPICK_REPORT"
 
-    # Zonen-Namen direkt ins NUMBER_PICKER-Label einbauen
+    # Zonen-Namen gekürzt direkt ins NUMBER_PICKER-Label (vor "-" abschneiden)
     ZONE_COUNT=$(wc -l < "$ZPICK_TMP" | tr -d ' ')
     ZPICK_LABEL=""
     zi=1
     while IFS= read -r zname; do
-        ZPICK_LABEL="${ZPICK_LABEL}${zi}=${zname} "
+        short=$(echo "$zname" | cut -d'-' -f1)
+        ZPICK_LABEL="${ZPICK_LABEL}${zi}=${short} "
         zi=$((zi+1))
     done < "$ZPICK_TMP"
     ZPICK_IDX=$(NUMBER_PICKER "${ZPICK_LABEL% }:" 1)
@@ -665,7 +666,16 @@ if [ -f "$LATEST_REPORT" ]; then
         LOG ""
         WAIT_FOR_BUTTON_PRESS
 
-        WATCH_PICK=$(NUMBER_PICKER "Gerät-Nr. (0=Skip):" 0)
+        # Geräte-Namen gekürzt direkt ins NUMBER_PICKER-Label
+        WL_LABEL="0=Skip "
+        wi=1
+        while IFS='|' read -r wl_mac wl_vendor; do
+            [ -z "$wl_mac" ] && continue
+            short=$(echo "$wl_vendor" | cut -c1-8)
+            WL_LABEL="${WL_LABEL}${wi}=${short} "
+            wi=$((wi+1))
+        done < "$WATCH_TMP"
+        WATCH_PICK=$(NUMBER_PICKER "${WL_LABEL% }:" 0)
 
         if [ -n "$WATCH_PICK" ] && [ "$WATCH_PICK" -gt 0 ] 2>/dev/null && \
            [ "$WATCH_PICK" -le "$MAC_COUNT" ] 2>/dev/null; then
