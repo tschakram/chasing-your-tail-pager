@@ -83,6 +83,12 @@ SERVICE_UUID_DB = {
     'fff0': ('IoT Proprietary Control',        False, RISK_MEDIUM),
     'fff1': ('IoT Data Service',               False, RISK_LOW),
     'ff00': ('Unknown Proprietary',            False, RISK_MEDIUM),
+    # === Tracker-spezifische UUIDs ===
+    'feed': ('Tile Tracker',                   False, RISK_HIGH),
+    'feea': ('Tile Tracker (Legacy)',           False, RISK_HIGH),
+    'fe9a': ('Chipolo Tracker',                False, RISK_HIGH),
+    'fd44': ('Samsung SmartThings Find',       False, RISK_HIGH),
+    'fabe': ('Tracker Beacon',                 False, RISK_HIGH),
 }
 
 # ============================================================
@@ -149,8 +155,27 @@ _CAMERA_APPEARANCE_CODES = {0x07D4, 0x07D5, 0x0C46, 0x0C4B, 0x0C4C}
 _AUDIO_APPEARANCE_CODES  = {0x07D6, 0x0C4A}
 
 # ============================================================
+# TRACKER COMPANY IDs (BT SIG Assigned Numbers)
+# company_id (int) → Tracker-Bezeichnung
+# ============================================================
+
+TRACKER_COMPANY_IDS = {
+    76:  'Apple (AirTag/FindMy)',      # 0x004C Apple Inc.
+    117: 'Samsung (SmartTag)',          # 0x0075 Samsung Electronics
+    224: 'Google (Find My Device)',     # 0x00E0 Google LLC
+    155: 'Tile, Inc.',                  # 0x009B Tile
+}
+
+# ============================================================
 # GERÄTENAMEN MUSTER
 # ============================================================
+
+_TRACKER_NAME_PATTERNS = [
+    'airtag', 'air tag', 'smarttag', 'smart tag', 'galaxy smarttag',
+    'tile', 'chipolo', 'orbit', 'pebblebee', 'nut find',
+    'invoxia', 'tracki', 'spytec', 'optimus',
+    'find my', 'findmy', 'location tracker',
+]
 
 _MIC_NAME_PATTERNS = [
     'headset', 'earbuds', 'airpods', 'galaxy buds', 'jabra', 'plantronics',
@@ -245,9 +270,9 @@ CAMERA_OUI_PREFIXES = {
 # FINGERPRINT FUNKTION
 # ============================================================
 
-def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendor=''):
+def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendor='', company_id=None):
     """
-    Bewertet ein BT/BLE-Gerät anhand von UUIDs, Appearance, Name, OUI.
+    Bewertet ein BT/BLE-Gerät anhand von UUIDs, Appearance, Name, OUI, Company ID.
 
     Args:
         mac:             MAC-Adresse (lowercase, colon-separated)
@@ -255,9 +280,10 @@ def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendo
         uuids:           Liste von 4-stelligen hex UUID-Strings
         appearance_code: BLE Appearance Code (int) oder None
         oui_vendor:      Herstellername aus IEEE OUI-Lookup
+        company_id:      BT SIG Company ID (int) aus Manufacturer Data
 
     Returns:
-        dict mit: risk, has_mic, has_camera, device_type, flags
+        dict mit: risk, has_mic, has_camera, has_tracker, device_type, flags
     """
     uuids = [u.lower().strip() for u in (uuids or [])]
     name_lower = (name or '').lower()
@@ -265,6 +291,7 @@ def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendo
     risk        = RISK_NONE
     has_mic     = False
     has_camera  = False
+    has_tracker = False
     device_types = []
     flags        = []
 
@@ -333,12 +360,46 @@ def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendo
         if not any('IoT' in f for f in flags):
             flags.append(f'⚠ IoT-Chip-Hersteller: {oui_vendor}')
 
+    # 6. Tracker-Erkennung
+    # a) Gerätename
+    for pattern in _TRACKER_NAME_PATTERNS:
+        if pattern in name_lower:
+            has_tracker = True
+            risk = RISK_HIGH
+            flags.append(f'🔍 TRACKER Name: "{name}"')
+            break
+
+    # b) Company ID (Apple FindMy, Samsung SmartTag, Google, Tile)
+    if company_id is not None:
+        tracker_brand = TRACKER_COMPANY_IDS.get(company_id)
+        if tracker_brand:
+            has_tracker = True
+            risk = RISK_HIGH
+            flags.append(f'🔍 TRACKER Company ID {company_id}: {tracker_brand}')
+
+    # c) Appearance Code: Tag/Tracker (0x0200) oder Schlüsselanhänger (0x0240)
+    if appearance_code in (0x0200, 0x0240):
+        has_tracker = True
+        risk = _max_risk(risk, RISK_HIGH)
+        if not any('TRACKER' in f for f in flags):
+            app_label = APPEARANCE_DB.get(appearance_code, ('Tracker', False))[0]
+            flags.append(f'🔍 TRACKER Appearance: {app_label}')
+
+    # d) Tracker-Service-UUID (Tile, Chipolo, Samsung SmartThings Find)
+    tracker_uuids = {'feed', 'feea', 'fe9a', 'fd44', 'fabe'}
+    for uuid in uuids:
+        uuid_short = uuid[-4:] if len(uuid) > 4 else uuid
+        if uuid_short in tracker_uuids:
+            has_tracker = True
+            # risk schon durch SERVICE_UUID_DB gesetzt (RISK_HIGH)
+
     device_type = device_types[0] if device_types else 'Unbekannt'
 
     return {
         'risk':        risk,
         'has_mic':     has_mic,
         'has_camera':  has_camera,
+        'has_tracker': has_tracker,
         'device_type': device_type,
         'all_types':   device_types,
         'flags':       flags,

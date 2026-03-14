@@ -48,7 +48,8 @@ def _scan_btmon(duration=20):
                 current = m.group(1).lower()
                 if current not in adv_data:
                     adv_data[current] = {
-                        'name': '', 'uuids': [], 'appearance': None, 'rssi': None
+                        'name': '', 'uuids': [], 'appearance': None,
+                        'rssi': None, 'company_id': None
                     }
                 continue
 
@@ -79,6 +80,13 @@ def _scan_btmon(duration=20):
             m = re.match(r'\s+RSSI:\s+(-?\d+)\s+dBm', line)
             if m:
                 adv_data[current]['rssi'] = int(m.group(1))
+                continue
+
+            # Company ID aus Manufacturer Specific Data
+            # btmon Format: "  Company: Apple, Inc. (76)"
+            m = re.match(r'\s+Company:\s+.+\((\d+)\)', line)
+            if m:
+                adv_data[current]['company_id'] = int(m.group(1))
 
     except Exception as e:
         log.error(f'btmon Fehler: {e}')
@@ -246,6 +254,8 @@ def scan_bluetooth(duration=15, with_fingerprint=True, oui_db=None):
         dev['appearance'] = adv['appearance']
         if adv['rssi'] is not None:
             dev['rssi'] = adv['rssi']
+        if adv['company_id'] is not None:
+            dev['company_id'] = adv['company_id']
 
     # SDP-Abfrage für BT Classic Geräte ohne UUIDs (v4.5)
     if with_fingerprint:
@@ -290,11 +300,13 @@ def _apply_fingerprinting(devices, oui_db=None):
             uuids=dev.get('uuids', []),
             appearance_code=dev.get('appearance'),
             oui_vendor=vendor,
+            company_id=dev.get('company_id'),
         )
         dev['vendor']      = vendor
         dev['risk']        = fp['risk']
         dev['has_mic']     = fp['has_mic']
         dev['has_camera']  = fp['has_camera']
+        dev['has_tracker'] = fp['has_tracker']
         dev['device_type'] = fp['device_type']
         dev['fp_flags']    = fp['flags']
         if fp['risk'] in ('medium', 'high'):
@@ -462,6 +474,7 @@ if __name__ == '__main__':
         emoji = {'none': '🟢', 'low': '🔵', 'medium': '🟡', 'high': '🔴'}.get(risk, '⚪')
         mic   = '🎤' if data.get('has_mic') else ''
         cam   = '📷' if data.get('has_camera') else ''
+        trk   = '🔍' if data.get('has_tracker') else ''
         print(f'  {emoji} {mac} | {data.get("type","?"):10} | '
               f'{data.get("name","?"):20} | {data.get("device_type",""):20} '
-              f'| {risk:6} {mic}{cam}')
+              f'| {risk:6} {mic}{cam}{trk}')
