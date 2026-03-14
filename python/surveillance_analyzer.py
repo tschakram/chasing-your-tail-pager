@@ -197,7 +197,7 @@ def generate_kml(suspicious_devices, gps_clusters, output_path):
     kml = Element('kml', xmlns='http://www.opengis.net/kml/2.2')
     doc = SubElement(kml, 'Document')
     SubElement(doc, 'name').text = f'CYT-Surveillance-{datetime.now().strftime("%Y%m%d_%H%M%S")}'
-    SubElement(doc, 'description').text = 'Chasing Your Tail NG - Surveillance Analysis'
+    SubElement(doc, 'description').text = 'Argus Pager - Surveillance Analysis'
 
     # Styles definieren
     for style_id, color, scale in [
@@ -302,7 +302,7 @@ def generate_surveillance_report(suspicious_devices, gps_clusters, output_dir):
     report_path = os.path.join(output_dir, f'surveillance_report_{ts}.md')
 
     with open(report_path, 'w') as f:
-        f.write('# 🔍 Chasing Your Tail NG - Surveillance Report\n\n')
+        f.write('# 🔍 Argus Pager - Surveillance Report\n\n')
         f.write(f'**Erstellt:** {datetime.now().strftime("%d.%m.%Y %H:%M:%S")}  \n')
         f.write(f'**GPS-Cluster:** {len(gps_clusters)}  \n')
         f.write(f'**Verdächtige Geräte:** {len(suspicious_devices)}  \n\n')
