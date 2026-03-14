@@ -316,7 +316,7 @@ def save_hotel_report(wifi_suspects, ble_all, ble_suspects, output_dir):
     total_suspects = len(wifi_suspects) + len(ble_suspects)
 
     with open(path, 'w') as f:
-        f.write('# 🏨 Hotel-Scan Report - Chasing Your Tail NG v4.4\n\n')
+        f.write('# 🏨 Argus Pager - Hotel-Scan Report\n\n')
         f.write(f'**Datum:** {datetime.now().strftime("%d.%m.%Y %H:%M:%S")}  \n')
         f.write(f'**WiFi Kamera-Verdächtige:** {len(wifi_suspects)}  \n')
         f.write(f'**BLE Kamera/IoT-Verdächtige:** {len(ble_suspects)}  \n')

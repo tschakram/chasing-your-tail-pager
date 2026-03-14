@@ -117,10 +117,10 @@ def _ensure_bt_fingerprinting(bt_devices, oui_db=None):
 def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None, wigle_client=None, suspects_db=None, watch_list=None, cur_lat=None, cur_lon=None):
     os.makedirs(output_dir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
-    path = os.path.join(output_dir, f'cyt_report_{ts}.md')
+    path = os.path.join(output_dir, f'argus_report_{ts}.md')
 
     with open(path, 'w') as f:
-        f.write('# Chasing Your Tail NG - Report\n\n')
+        f.write('# Argus Pager - Report\n\n')
         f.write(f'**Datum:** {datetime.now().strftime("%d.%m.%Y %H:%M:%S")}  \n')
         f.write(f'**Geräte gesamt:** {len(scored)}  \n')
         f.write(f'**Verdächtig:** {len(suspicious)}  \n')

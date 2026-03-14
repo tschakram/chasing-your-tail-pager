@@ -285,9 +285,9 @@ def save_results(scored_devices, suspicious, output_dir):
     log.info(f"JSON gespeichert: {json_path}")
 
     # Markdown-Report
-    md_path = os.path.join(output_dir, f'cyt_report_{ts}.md')
+    md_path = os.path.join(output_dir, f'argus_report_{ts}.md')
     with open(md_path, 'w') as f:
-        f.write(f"# Chasing Your Tail NG - Report\n\n")
+        f.write(f"# Argus Pager - Report\n\n")
         f.write(f"**Datum:** {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}  \n")
         f.write(f"**Geräte gesamt:** {len(scored_devices)}  \n")
         f.write(f"**Verdächtig:** {len(suspicious)}  \n\n")
