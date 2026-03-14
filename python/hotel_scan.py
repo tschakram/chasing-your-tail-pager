@@ -101,6 +101,38 @@ CAMERA_WIFI_OUIS = {
     '00:26:61': 'Foscam',
     # Amcrest
     'b4:f1:e8': 'Amcrest',
+    # Hikvision (weitere OUI-Blöcke)
+    '44:19:b6': 'Hikvision',
+    '40:59:c0': 'Hikvision',
+    'bc:ad:28': 'Hikvision',
+    'c0:56:e3': 'Hikvision',
+    # EZVIZ (Hikvision-Marke)
+    'c4:2f:90': 'EZVIZ/Hikvision',
+    '8c:e7:48': 'EZVIZ/Hikvision',
+    # Dahua (weitere OUI-Blöcke)
+    '3c:ef:8c': 'Dahua',
+    'e0:50:8b': 'Dahua',
+    '60:ed:e0': 'Dahua',
+    # IMOU (Dahua-Marke)
+    'f8:36:9b': 'IMOU/Dahua',
+    # Reolink (weitere OUI-Blöcke)
+    'e0:62:90': 'Reolink',
+    # Axis Communications (Profi-IP-Kameras)
+    '00:40:8c': 'Axis Communications',
+    # Tuya IoT (BK7231-Chip — verbreitet in Budget-Kameras und Smart-Geräten)
+    'd8:f1:5b': 'Tuya IoT',
+    'a4:50:46': 'Tuya IoT',
+    '50:02:91': 'Tuya IoT',
+    # Amazon Echo / Alexa (Mikrofon-Geräte — in Hotelzimmern ungewöhnlich)
+    'fc:65:de': 'Amazon Echo',
+    '40:b4:cd': 'Amazon Echo',
+    '74:c2:46': 'Amazon Echo',
+    '68:37:e9': 'Amazon Echo',
+    'f0:81:73': 'Amazon Echo',
+    # Raspberry Pi (DIY-Kamera / Surveillance-Plattform)
+    'b8:27:eb': 'Raspberry Pi',
+    'dc:a6:32': 'Raspberry Pi',
+    'e4:5f:01': 'Raspberry Pi',
 }
 
 # ============================================================
