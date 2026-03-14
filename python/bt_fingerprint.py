@@ -177,6 +177,30 @@ _TRACKER_NAME_PATTERNS = [
     'find my', 'findmy', 'location tracker',
 ]
 
+# Gerätenamen die TROTZ Tracker-Company-ID kein Tracker sind (False-Positive-Filter)
+# Company-ID 117 = Samsung trifft z.B. auch TVs, Soundbars, Drucker etc.
+_TRACKER_NAME_EXCLUDES = [
+    # Samsung TVs
+    'tv', ' qled', ' oled', ' neo', 'samsung bu', 'samsung cu', 'samsung au',
+    'samsung qn', 'samsung un', 'the frame', 'the serif', 'the sero',
+    # Soundbars / Speaker
+    'soundbar', 'hw-', 'sound tower', 'shape m',
+    # Monitore / Displays
+    'monitor', 'display', 'smart monitor',
+    # Drucker / Scan
+    'printer', 'xpress', 'scx-', 'clp-', 'ml-',
+    # Haushaltsgeräte
+    'washer', 'dryer', 'fridge', 'refrigerator', 'vacuum', 'robotic',
+    'bespoke', 'jet bot', 'powerbot',
+    # Wearables (kein Tracker)
+    'galaxy watch', 'gear s', 'gear fit', 'galaxy fit',
+    # PC / Tablet
+    'galaxy book', 'galaxy tab', 'galaxy s ', 'galaxy a ', 'galaxy m ',
+    # Apple Non-Tracker (Company ID 76 = Apple, aber nicht alle sind AirTags)
+    'macbook', 'imac', 'mac pro', 'mac mini', 'ipad', 'apple tv',
+    'apple watch', 'homepod', 'airpods', 'beats',
+]
+
 _MIC_NAME_PATTERNS = [
     'headset', 'earbuds', 'airpods', 'galaxy buds', 'jabra', 'plantronics',
     'poly ', 'bose', 'sony wh', 'sony wf', 'beats', 'sennheiser',
@@ -370,12 +394,17 @@ def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendo
             break
 
     # b) Company ID (Apple FindMy, Samsung SmartTag, Google, Tile)
+    #    Ausnahme: bekannte Nicht-Tracker (TV, Soundbar, Drucker etc.)
     if company_id is not None:
         tracker_brand = TRACKER_COMPANY_IDS.get(company_id)
         if tracker_brand:
-            has_tracker = True
-            risk = RISK_HIGH
-            flags.append(f'🔍 TRACKER Company ID {company_id}: {tracker_brand}')
+            is_excluded = any(ex in name_lower for ex in _TRACKER_NAME_EXCLUDES)
+            if is_excluded:
+                flags.append(f'ℹ️ Company ID {company_id} ({tracker_brand}) — kein Tracker (bekanntes Gerät: "{name}")')
+            else:
+                has_tracker = True
+                risk = RISK_HIGH
+                flags.append(f'🔍 TRACKER Company ID {company_id}: {tracker_brand}')
 
     # c) Appearance Code: Tag/Tracker (0x0200) oder Schlüsselanhänger (0x0240)
     if appearance_code in (0x0200, 0x0240):
