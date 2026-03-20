@@ -12,6 +12,13 @@ from wigle_lookup import WiGLEClient, lookup_device, format_wigle_section, forma
 from suspects_db import SuspectsDB
 from watch_list import WatchList
 
+try:
+    from pcap_engine import read_pcap_data_ips
+    from shodan_lookup import enrich_ip, is_private_ip
+    _HAS_SHODAN = True
+except ImportError:
+    _HAS_SHODAN = False
+
 def is_locally_administered(mac):
     """Prüft ob MAC lokal administriert (gespooft/randomisiert) ist."""
     try:
@@ -114,7 +121,7 @@ def _ensure_bt_fingerprinting(bt_devices, oui_db=None):
     return result
 
 
-def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None, wigle_client=None, suspects_db=None, watch_list=None, cur_lat=None, cur_lon=None):
+def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, oui_db=None, wigle_client=None, suspects_db=None, watch_list=None, cur_lat=None, cur_lon=None, mac_to_ips=None, shodan_key=None):
     os.makedirs(output_dir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(output_dir, f'argus_report_{ts}.md')
@@ -203,6 +210,32 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
                         f.write(wigle_text + '\n')
                     else:
                         f.write('\n**WiGLE:** Keine Treffer (Wildcard Probes)\n')
+            # InternetDB Enrichment für verdächtige Geräte mit IPs
+            if _HAS_SHODAN and mac_to_ips:
+                enriched_any = False
+                for mac in new_suspicious:
+                    ips = mac_to_ips.get(mac, set())
+                    public_ips = [ip for ip in ips if not is_private_ip(ip)]
+                    if not public_ips:
+                        continue
+                    if not enriched_any:
+                        f.write('\n### 🌐 InternetDB Enrichment\n\n')
+                        enriched_any = True
+                    for ip in public_ips[:2]:
+                        info = enrich_ip(ip, api_key=shodan_key)
+                        if info.get('source') == 'error':
+                            continue
+                        f.write(f'**`{mac}`** → `{ip}`\n')
+                        if info.get('ports'):
+                            f.write(f'- Offene Ports: {", ".join(str(p) for p in info["ports"][:10])}\n')
+                        if info.get('vulns'):
+                            f.write(f'- CVEs: {", ".join(info["vulns"][:5])}\n')
+                        if info.get('tags'):
+                            f.write(f'- Tags: {", ".join(info["tags"])}\n')
+                        if info.get('org'):
+                            f.write(f'- Organisation: {info["org"]}\n')
+                        f.write('\n')
+
         elif not tracking_alarms and not static_alarms:
             f.write('## ✅ Keine verdächtigen Geräte erkannt\n\n')
 
@@ -413,9 +446,24 @@ def main():
         except Exception as e:
             log.warning(f'GPS-Track Lesefehler: {e}')
 
+    # IP-Extraktion aus PCAPs (für InternetDB Enrichment)
+    mac_to_ips = {}
+    shodan_key = config.get('shodan_api_key', '')
+    if _HAS_SHODAN:
+        for pcap_path in pcap_files:
+            try:
+                ips, _ = read_pcap_data_ips(pcap_path)
+                for mac, ip_set in ips.items():
+                    mac_to_ips.setdefault(mac, set()).update(ip_set)
+            except Exception as e:
+                log.debug(f'IP-Extraktion fehlgeschlagen: {pcap_path}: {e}')
+        if mac_to_ips:
+            log.info(f'IP-Extraktion: {len(mac_to_ips)} MACs mit IPs')
+
     save_report(scored, suspicious, args.output_dir, ignore_macs,
                 bt_devices_all, oui_db, wigle_client,
-                suspects, wl, cur_lat, cur_lon)
+                suspects, wl, cur_lat, cur_lon,
+                mac_to_ips=mac_to_ips, shodan_key=shodan_key)
     sys.exit(2 if suspicious else 0)
 
 if __name__ == '__main__':
