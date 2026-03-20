@@ -52,6 +52,8 @@ def read_pcap_probes(filepath):
                 ts_sec, ts_usec, incl_len, orig_len = struct.unpack(
                     endian + 'IIII', hdr
                 )
+                if incl_len > 0x40000:  # 256 KB sanity limit
+                    break
                 data = f.read(incl_len)
                 if len(data) < incl_len:
                     break
@@ -60,6 +62,8 @@ def read_pcap_probes(filepath):
                 if len(data) < 4:
                     continue
                 rt_len = struct.unpack('<H', data[2:4])[0]
+                if rt_len > len(data):
+                    continue
                 dot11 = data[rt_len:]
 
                 # Frame Control prüfen
@@ -205,6 +209,8 @@ def read_pcap_beacons(filepath):
                 ts_sec, ts_usec, incl_len, orig_len = struct.unpack(
                     endian + 'IIII', hdr
                 )
+                if incl_len > 0x40000:  # 256 KB sanity limit
+                    break
                 data = f.read(incl_len)
                 if len(data) < incl_len:
                     break
