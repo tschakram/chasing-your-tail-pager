@@ -53,10 +53,16 @@ def is_private_ip(ip):
 
 # ── HTTP Helper ──────────────────────────────────────────────────────────────
 
+_UA = {'User-Agent': 'ArgusP/1.0'}
+
+
 def _http_get(url, timeout=5, headers=None):
     """GET request, returns parsed JSON or None."""
     try:
-        req = urllib.request.Request(url, headers=headers or {})
+        h = dict(_UA)
+        if headers:
+            h.update(headers)
+        req = urllib.request.Request(url, headers=h)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
@@ -103,7 +109,8 @@ def internetdb_lookup(ip, timeout=5):
 
 def cvedb_by_product(product, limit=5):
     """
-    Kostenlos, kein Key. Sucht CVEs nach Produktname.
+    Kostenlos, kein Key. Sucht CVEs nach Produktname oder CPE.
+    Versucht zuerst CPE-Suche (zuverlässiger), dann product-Suche.
     Returns: [{cve, cvss, kev, epss, propose_action}]
     """
     if not product:
@@ -113,12 +120,14 @@ def cvedb_by_product(product, limit=5):
     if cache_key in _cache:
         return _cache[cache_key]
 
-    # Erst KEV (Known Exploited Vulnerabilities)
+    results = []
+
+    # CPE-basierte Suche (zuverlässiger bei CVEDB)
+    cpe_query = f'cpe:/a:{product}'
     params = urllib.parse.urlencode({
-        'product': product, 'is_kev': 'true', 'limit': limit
+        'cpe': cpe_query, 'is_kev': 'true', 'limit': limit
     })
     data = _http_get(f'https://cvedb.shodan.io/cves?{params}', timeout=8)
-    results = []
     if data and data.get('cves'):
         for c in data['cves'][:limit]:
             results.append({
@@ -129,7 +138,23 @@ def cvedb_by_product(product, limit=5):
                 'propose_action': c.get('propose_action', ''),
             })
 
-    # Falls keine KEVs: nach EPSS sortiert
+    # Falls keine KEVs: CPE nach EPSS sortiert
+    if not results:
+        params = urllib.parse.urlencode({
+            'cpe': cpe_query, 'sort_by_epss': 'true', 'limit': limit
+        })
+        data = _http_get(f'https://cvedb.shodan.io/cves?{params}', timeout=8)
+        if data and data.get('cves'):
+            for c in data['cves'][:limit]:
+                results.append({
+                    'cve': c.get('cve_id', c.get('cve', '?')),
+                    'cvss': c.get('cvss', c.get('cvss_v3', 0)),
+                    'kev': c.get('kev', False),
+                    'epss': c.get('epss', 0),
+                    'propose_action': c.get('propose_action', ''),
+                })
+
+    # Fallback: product-Suche (funktioniert bei manchen Vendors)
     if not results:
         params = urllib.parse.urlencode({
             'product': product, 'sort_by_epss': 'true', 'limit': limit
@@ -290,7 +315,7 @@ def fingerbank_lookup(mac, api_key, dhcp_fingerprint=None, timeout=5):
         return None
 
     score = data.get('score', 0)
-    if score < 60:
+    if score < 30:
         _cache[cache_key] = None
         return None
 
