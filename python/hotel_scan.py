@@ -307,7 +307,8 @@ def scan_ble_hotel(duration=60, oui_db=None):
 # REPORT
 # ============================================================
 
-def save_hotel_report(wifi_suspects, ble_all, ble_suspects, output_dir):
+def save_hotel_report(wifi_suspects, ble_all, ble_suspects, output_dir,
+                      activity_results=None):
     """Generiert Hotel-Scan Report als Markdown."""
     os.makedirs(output_dir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -338,6 +339,15 @@ def save_hotel_report(wifi_suspects, ble_all, ble_suspects, output_dir):
                             f'RSSI: {s["rssi"] or "?"} dBm | '
                             f'Entfernung: ~{s["distance_est"]}\n')
                     f.write(f'- Beacons: {s["beacon_count"]}\n')
+                    # Activity Detection
+                    if activity_results:
+                        act = activity_results.get(s['bssid'].lower(), {})
+                        if act.get('active'):
+                            f.write(f'- 🎬 AKTIV: {act["spikes"]} '
+                                    f'Aktivitätsspike(s) während Scan '
+                                    f'(max. {act["max_kbps"]} KB/s)\n')
+                        else:
+                            f.write('- ✅ Inaktiv während Scan\n')
                     for r in s['reasons']:
                         f.write(f'- {r}\n')
                     f.write('\n')
@@ -407,13 +417,20 @@ def save_hotel_report(wifi_suspects, ble_all, ble_suspects, output_dir):
         # === ALLE WIFI BEACONS ===
         if wifi_suspects:
             f.write('## Alle WiFi Kamera-Verdächtige\n\n')
-            f.write('| Risiko | BSSID | SSID | Hersteller | RSSI | Beacons |\n')
-            f.write('|--------|-------|------|------------|------|--------|\n')
+            f.write('| Risiko | BSSID | SSID | Hersteller | RSSI | Beacons | Aktivität |\n')
+            f.write('|--------|-------|------|------------|------|--------|----------|\n')
             for s in wifi_suspects:
                 emoji = '🔴' if s['risk'] == RISK_HIGH else '🟡'
+                act_str = '-'
+                if activity_results:
+                    act = activity_results.get(s['bssid'].lower(), {})
+                    if act.get('active'):
+                        act_str = f'🎬 {act["spikes"]}× ({act["max_kbps"]} KB/s)'
+                    elif act:
+                        act_str = '✅ inaktiv'
                 f.write(f'| {emoji} | `{s["bssid"]}` | {s["ssid"]} | '
                         f'{s["vendor"]} | {s["rssi"] or "?"} dBm | '
-                        f'{s["beacon_count"]} |\n')
+                        f'{s["beacon_count"]} | {act_str} |\n')
 
     log.info(f'Hotel-Scan Report: {path}')
     print(f'REPORT_PATH:{path}')
@@ -503,10 +520,41 @@ def main():
         ble_suspects = {m: d for m, d in ble_suspects.items()
                         if m.lower() not in ignore_macs}
 
+    # Camera Activity Detection (wenn WiFi-Verdächtige gefunden)
+    activity_results = {}
+    if wifi_suspects and pcap_files:
+        try:
+            from camera_activity import analyze_camera_activity
+            suspect_bssids = [s['bssid'] for s in wifi_suspects]
+            activity_results = analyze_camera_activity(
+                pcap_files, suspect_bssids, threshold_kbps=200
+            )
+            active = sum(1 for a in activity_results.values() if a.get('active'))
+            log.info(f'Activity Detection: {active} von {len(suspect_bssids)} aktiv')
+        except Exception as e:
+            log.warning(f'Activity Detection fehlgeschlagen: {e}')
+
+    # Suspects-Datei exportieren (für standalone camera_activity.py)
+    if wifi_suspects:
+        suspects_path = os.path.join(args.output_dir, 'suspects.json')
+        os.makedirs(args.output_dir, exist_ok=True)
+        with open(suspects_path, 'w') as f:
+            json.dump(wifi_suspects, f, indent=2)
+        print(f'SUSPECTS_FILE:{suspects_path}')
+
     # Report generieren
     report_path, total = save_hotel_report(
-        wifi_suspects, ble_all, ble_suspects, args.output_dir
+        wifi_suspects, ble_all, ble_suspects, args.output_dir,
+        activity_results=activity_results
     )
+
+    # Activity-Ausgabe für payload.sh
+    for bssid, data in activity_results.items():
+        if data.get('active'):
+            print(f"ACTIVITY:{bssid}:{data['spikes']}:{data['max_kbps']}")
+    active_count = sum(1 for a in activity_results.values() if a.get('active'))
+    if active_count > 0:
+        print(f'ACTIVITY_SUMMARY:{active_count} Kamera(s) aktiv während Scan')
 
     log.info(f'Hotel-Scan abgeschlossen: {total} Verdächtige gefunden')
     sys.exit(2 if total > 0 else 0)
