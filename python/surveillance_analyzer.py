@@ -152,34 +152,29 @@ def correlate_devices_to_locations(suspicious_devices, gps_clusters, db_path):
 
     # Geräte-Timestamps aus DB laden
     try:
-        conn = sqlite3.connect(db_path, timeout=10)
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path, timeout=10) as conn:
+            for mac, data in suspicious_devices.items():
+                # Zeitstempel des Geräts
+                first_ts = data.get('first_seen', 0) or 0
+                last_ts = data.get('last_seen', 0) or 0
 
-        for mac, data in suspicious_devices.items():
-            mac_clean = mac.replace(':', '').upper()
-            # Zeitstempel des Geräts
-            first_ts = data.get('first_seen', 0) or 0
-            last_ts = data.get('last_seen', 0) or 0
+                # Passende Cluster finden (zeitliche Überschneidung)
+                matched_clusters = []
+                for cluster in gps_clusters:
+                    c_start = cluster['start_time']
+                    c_end = cluster['end_time']
+                    # Zeitliche Überschneidung prüfen
+                    if first_ts <= c_end and last_ts >= c_start:
+                        matched_clusters.append({
+                            'lat': cluster['lat'],
+                            'lon': cluster['lon'],
+                            'point_count': cluster['point_count']
+                        })
 
-            # Passende Cluster finden (zeitliche Überschneidung)
-            matched_clusters = []
-            for cluster in gps_clusters:
-                c_start = cluster['start_time']
-                c_end = cluster['end_time']
-                # Zeitliche Überschneidung prüfen
-                if first_ts <= c_end and last_ts >= c_start:
-                    matched_clusters.append({
-                        'lat': cluster['lat'],
-                        'lon': cluster['lon'],
-                        'point_count': cluster['point_count']
-                    })
-
-            if matched_clusters:
-                data['gps_locations'] = matched_clusters
-                data['location_count'] = len(matched_clusters)
-                log.info(f"Gerät {mac} an {len(matched_clusters)} Standort(en) gesehen")
-
-        conn.close()
+                if matched_clusters:
+                    data['gps_locations'] = matched_clusters
+                    data['location_count'] = len(matched_clusters)
+                    log.info(f"Gerät {mac} an {len(matched_clusters)} Standort(en) gesehen")
 
     except sqlite3.Error as e:
         log.warning(f"Geräte-Location-Korrelation fehlgeschlagen: {e}")

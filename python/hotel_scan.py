@@ -467,7 +467,10 @@ def main():
     beacons = {}
     for pcap_path in pcap_files:
         log.info(f'Lese Beacon Frames: {pcap_path}')
-        _merge_beacons(beacons, read_pcap_beacons(pcap_path))
+        try:
+            _merge_beacons(beacons, read_pcap_beacons(pcap_path))
+        except Exception as e:
+            log.warning(f'PCAP-Lesefehler übersprungen: {pcap_path}: {e}')
     log.info(f'WiFi: {len(beacons)} BSSIDs aus {len(pcap_files)} PCAP(s)')
     wifi_suspects = [s for s in analyze_beacons(beacons, oui_db)
                      if s['bssid'].lower() not in ignore_macs]

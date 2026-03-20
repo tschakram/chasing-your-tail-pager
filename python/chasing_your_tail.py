@@ -100,7 +100,7 @@ def load_ignore_lists(config):
                 with open(path, 'r') as f:
                     data = json.load(f)
                 items = data.get(key, [])
-                target_set.update(str(i).upper() for i in items)
+                target_set.update(str(i).lower() for i in items)
                 log.info(f"Ignore-Liste geladen: {len(items)} Einträge aus {path}")
             except Exception as e:
                 log.warning(f"Ignore-Liste nicht ladbar ({path}): {e}")
@@ -135,56 +135,54 @@ def query_kismet_db(db_path, time_window_minutes=20, ignore_macs=None, ignore_ss
     })
 
     try:
-        conn = sqlite3.connect(db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        # Kismet speichert Geräte mit letztem_gesehen-Timestamp
-        # Sichere Abfrage mit Parametern (kein SQL-Injection)
-        cursor.execute("""
-            SELECT devmac, phyname, strongest_signal,
-                   first_time, last_time, device
-            FROM devices
-            WHERE last_time >= ?
-              AND (phyname = '802.11' OR phyname LIKE '%WiFi%')
-        """, (cutoff_ts,))
+            # Kismet speichert Geräte mit letztem_gesehen-Timestamp
+            # Sichere Abfrage mit Parametern (kein SQL-Injection)
+            cursor.execute("""
+                SELECT devmac, phyname, strongest_signal,
+                       first_time, last_time, device
+                FROM devices
+                WHERE last_time >= ?
+                  AND (phyname = '802.11' OR phyname LIKE '%WiFi%')
+            """, (cutoff_ts,))
 
-        rows = cursor.fetchall()
-        log.info(f"Kismet-DB: {len(rows)} 802.11-Geräte im Zeitfenster ({time_window_minutes} Min.)")
+            rows = cursor.fetchall()
+            log.info(f"Kismet-DB: {len(rows)} 802.11-Geräte im Zeitfenster ({time_window_minutes} Min.)")
 
-        for row in rows:
-            mac = str(row['devmac']).upper().strip()
+            for row in rows:
+                mac = str(row['devmac']).lower().strip()
 
-            # MAC ignorieren?
-            if mac in ignore_macs:
-                continue
+                # MAC ignorieren?
+                if mac in ignore_macs:
+                    continue
 
-            # JSON-Device-Blob parsen für Probe-SSIDs
-            probe_ssids = set()
-            try:
-                dev_json = json.loads(row['device'])
-                # Kismet speichert Probes unter dot11.device > dot11.device.probed_ssid_map
-                dot11 = dev_json.get('dot11.device', {})
-                probe_map = dot11.get('dot11.device.probed_ssid_map', {})
-                for ssid_entry in probe_map.values():
-                    ssid = ssid_entry.get('dot11.probedssid.ssid', '')
-                    if ssid and ssid.upper() not in ignore_ssids:
-                        probe_ssids.add(ssid)
-            except (json.JSONDecodeError, AttributeError, TypeError):
-                pass
+                # JSON-Device-Blob parsen für Probe-SSIDs
+                probe_ssids = set()
+                try:
+                    dev_json = json.loads(row['device'])
+                    # Kismet speichert Probes unter dot11.device > dot11.device.probed_ssid_map
+                    dot11 = dev_json.get('dot11.device', {})
+                    probe_map = dot11.get('dot11.device.probed_ssid_map', {})
+                    for ssid_entry in probe_map.values():
+                        ssid = ssid_entry.get('dot11.probedssid.ssid', '')
+                        if ssid and ssid.upper() not in ignore_ssids:
+                            probe_ssids.add(ssid)
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    pass
 
-            first_t = row['first_time']
-            last_t = row['last_time']
+                first_t = row['first_time']
+                last_t = row['last_time']
 
-            devices[mac]['ssids'].update(probe_ssids)
-            devices[mac]['timestamps'].append(last_t)
-            devices[mac]['appearances'] += 1
-            if devices[mac]['first_seen'] is None or first_t < devices[mac]['first_seen']:
-                devices[mac]['first_seen'] = first_t
-            if devices[mac]['last_seen'] is None or last_t > devices[mac]['last_seen']:
-                devices[mac]['last_seen'] = last_t
-
-        conn.close()
+                devices[mac]['ssids'].update(probe_ssids)
+                devices[mac]['timestamps'].append(last_t)
+                devices[mac]['appearances'] += 1
+                if devices[mac]['first_seen'] is None or first_t < devices[mac]['first_seen']:
+                    devices[mac]['first_seen'] = first_t
+                if devices[mac]['last_seen'] is None or last_t > devices[mac]['last_seen']:
+                    devices[mac]['last_seen'] = last_t
 
     except sqlite3.Error as e:
         log.error(f"SQLite-Fehler: {e}")
