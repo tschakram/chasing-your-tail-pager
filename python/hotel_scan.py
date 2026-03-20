@@ -16,6 +16,12 @@ from bt_fingerprint import (
     fingerprint_device, risk_emoji, RISK_HIGH, RISK_MEDIUM, CAMERA_OUI_PREFIXES
 )
 
+try:
+    from shodan_lookup import cvedb_for_vendor, fingerbank_lookup
+    _HAS_SHODAN = True
+except ImportError:
+    _HAS_SHODAN = False
+
 log = logging.getLogger('CYT-Hotel')
 
 # ============================================================
@@ -175,12 +181,15 @@ def _rssi_to_distance(rssi):
         return '>30m'
 
 
-def analyze_beacons(beacons, oui_db=None):
+def analyze_beacons(beacons, oui_db=None, fingerbank_key=None,
+                    mac_to_dhcp=None):
     """
     Analysiert Beacon-Frame-Daten auf Kamera-Verdacht.
+    Optional: Fingerbank-Lookup und CVEDB-CVEs.
     Returns: list of suspect dicts, sorted by risk descending.
     """
     suspects = []
+    mac_to_dhcp = mac_to_dhcp or {}
 
     for bssid, data in beacons.items():
         ssid    = data.get('ssid', '')
@@ -222,6 +231,41 @@ def analyze_beacons(beacons, oui_db=None):
                 risk = 'low'
             reasons.append('⚠ Versteckte SSID (leerer Beacon)')
 
+        # 5. Fingerbank Lookup (wenn Key vorhanden)
+        fb_result = None
+        if _HAS_SHODAN and fingerbank_key and risk != 'none':
+            try:
+                dhcp_fp = mac_to_dhcp.get(bssid.lower())
+                fb_result = fingerbank_lookup(
+                    bssid, fingerbank_key, dhcp_fingerprint=dhcp_fp
+                )
+                if fb_result:
+                    reasons.append(
+                        f'🔍 Fingerbank: {fb_result["device_name"]} '
+                        f'({fb_result["category"]}, Score: {fb_result["score"]})'
+                    )
+                    if fb_result['risk'] == 'high' and risk != RISK_HIGH:
+                        risk = RISK_HIGH
+                    elif fb_result['risk'] == 'medium' and risk == 'low':
+                        risk = RISK_MEDIUM
+            except Exception as e:
+                log.debug(f'Fingerbank-Lookup fehlgeschlagen: {bssid}: {e}')
+
+        # 6. CVEDB Lookup für Kamera-Hersteller
+        cves = []
+        vendor_name = cam_vendor or ''
+        if _HAS_SHODAN and vendor_name and risk != 'none':
+            try:
+                cves = cvedb_for_vendor(vendor_name)
+                if cves:
+                    kev_count = sum(1 for c in cves if c.get('kev'))
+                    reasons.append(
+                        f'🛡 {len(cves)} CVEs bekannt'
+                        + (f' ({kev_count} KEV!)' if kev_count else '')
+                    )
+            except Exception as e:
+                log.debug(f'CVEDB-Lookup fehlgeschlagen: {vendor_name}: {e}')
+
         if risk == 'none':
             continue
 
@@ -236,6 +280,8 @@ def analyze_beacons(beacons, oui_db=None):
             'reasons':     reasons,
             'vendor':      cam_vendor or ieee_vendor or 'Unbekannt',
             'distance_est': _rssi_to_distance(rssi),
+            'cves':        cves,
+            'fingerbank':  fb_result,
         })
 
     suspects.sort(key=lambda x: [RISK_HIGH, RISK_MEDIUM, 'low', 'none'].index(x['risk']))
@@ -350,6 +396,13 @@ def save_hotel_report(wifi_suspects, ble_all, ble_suspects, output_dir,
                             f.write('- ✅ Inaktiv während Scan\n')
                     for r in s['reasons']:
                         f.write(f'- {r}\n')
+                    # CVE-Details
+                    if s.get('cves'):
+                        f.write('- **Bekannte Schwachstellen:**\n')
+                        for cve in s['cves'][:3]:
+                            kev_tag = ' **KEV**' if cve.get('kev') else ''
+                            f.write(f'  - {cve["cve"]} '
+                                    f'(CVSS: {cve["cvss"]}{kev_tag})\n')
                     f.write('\n')
 
             if high_ble:
@@ -478,6 +531,19 @@ def main():
     except Exception:
         pass
 
+    # Config laden (Fingerbank-Key)
+    fingerbank_key = None
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'config.json'
+    )
+    try:
+        with open(config_path) as f:
+            cfg = json.load(f)
+        fingerbank_key = cfg.get('fingerbank_api_key', '')
+    except Exception:
+        pass
+
     # WiFi Beacon-Analyse (alle PCAP-Dateien zusammenführen)
     pcap_files = [p.strip() for p in args.pcap.split(',')
                   if p.strip() and os.path.exists(p.strip())]
@@ -489,7 +555,24 @@ def main():
         except Exception as e:
             log.warning(f'PCAP-Lesefehler übersprungen: {pcap_path}: {e}')
     log.info(f'WiFi: {len(beacons)} BSSIDs aus {len(pcap_files)} PCAP(s)')
-    wifi_suspects = [s for s in analyze_beacons(beacons, oui_db)
+
+    # DHCP Fingerprints aus PCAPs extrahieren (für Fingerbank)
+    mac_to_dhcp = {}
+    if _HAS_SHODAN and fingerbank_key:
+        try:
+            from pcap_engine import read_pcap_data_ips
+            for pcap_path in pcap_files:
+                _, dhcp = read_pcap_data_ips(pcap_path)
+                mac_to_dhcp.update(dhcp)
+            if mac_to_dhcp:
+                log.info(f'DHCP Fingerprints: {len(mac_to_dhcp)} Geräte')
+        except Exception as e:
+            log.debug(f'DHCP-Extraktion fehlgeschlagen: {e}')
+
+    wifi_suspects = [s for s in analyze_beacons(
+                         beacons, oui_db,
+                         fingerbank_key=fingerbank_key,
+                         mac_to_dhcp=mac_to_dhcp)
                      if s['bssid'].lower() not in ignore_macs]
     log.info(f'WiFi Verdächtige: {len(wifi_suspects)}')
 
