@@ -14,14 +14,34 @@ log = logging.getLogger('CYT-BT')
 # BLE ADVERTISEMENT DATA (btmon-basiert)
 # ============================================================
 
+def _classify_random_subtype(mac):
+    """Bits 7..6 des ersten Bytes klassifizieren Random-BLE-Adressen.
+    01 = Resolvable Private Address (RPA, rotiert ~15min - Privacy-Geraete)
+    00 = Non-Resolvable Private (transient, einmalig)
+    11 = Static Random (fix, aber nicht IEEE-OUI)
+    10 = reserviert
+    """
+    try:
+        first = int(mac.split(':')[0], 16)
+        bits = (first >> 6) & 0b11
+        return {0b01: 'resolvable',
+                0b00: 'non_resolvable',
+                0b11: 'static'}.get(bits, 'reserved')
+    except Exception:
+        return None
+
+
 def _scan_btmon(duration=20):
     """
     Lauscht auf BLE Advertisement Data via btmon.
-    Extrahiert Service UUIDs, Appearance Code, Name und RSSI.
-    Gibt {mac_lower: {name, uuids, appearance, rssi}} zurück.
+    Extrahiert Service UUIDs, Appearance Code, Name, RSSI und Address Type.
+    Gibt {mac_lower: {name, uuids, appearance, rssi, addr_type, addr_subtype}}
+    zurueck. addr_type: 'public' oder 'random'. addr_subtype nur bei random:
+    'resolvable' / 'non_resolvable' / 'static'.
     """
     adv_data = {}
     current  = None  # aktuelle MAC
+    pending_addr_type = None  # 'public'/'random', wird vor 'Address:' gelesen
 
     try:
         proc = subprocess.Popen(
@@ -42,15 +62,39 @@ def _scan_btmon(duration=20):
                 break
             line = line.rstrip()
 
-            # Neue Advertising-Report Adresse
-            m = re.match(r'\s+Address:\s+([0-9A-Fa-f:]{17})', line)
+            # Address Type kommt VOR Address im btmon-Output
+            m = re.match(r'\s+Address type:\s+(Public|Random)', line)
+            if m:
+                pending_addr_type = m.group(1).lower()
+                continue
+
+            # Neue Advertising-Report Adresse - akzeptiert auch optionale
+            # Klammer-Annotation: "(Resolvable)", "(Static)", Vendor-Name etc.
+            m = re.match(r'\s+Address:\s+([0-9A-Fa-f:]{17})(?:\s+\(([^)]+)\))?', line)
             if m:
                 current = m.group(1).lower()
+                annotation = (m.group(2) or '').strip().lower()
                 if current not in adv_data:
+                    addr_type = pending_addr_type or 'unknown'
+                    addr_subtype = None
+                    if addr_type == 'random':
+                        # Erst btmon-Annotation auswerten (Resolvable/Static/...)
+                        if 'resolv' in annotation and 'non' not in annotation:
+                            addr_subtype = 'resolvable'
+                        elif 'non-resolv' in annotation or 'non_resolv' in annotation:
+                            addr_subtype = 'non_resolvable'
+                        elif 'static' in annotation:
+                            addr_subtype = 'static'
+                        else:
+                            # Fallback: aus den Bits berechnen
+                            addr_subtype = _classify_random_subtype(current)
                     adv_data[current] = {
                         'name': '', 'uuids': [], 'appearance': None,
-                        'rssi': None, 'company_id': None
+                        'rssi': None, 'company_id': None,
+                        'addr_type': addr_type,
+                        'addr_subtype': addr_subtype,
                     }
+                pending_addr_type = None
                 continue
 
             if current is None:
@@ -243,7 +287,7 @@ def scan_bluetooth(duration=15, with_fingerprint=True, oui_db=None):
         else:
             all_devices[mac]['type'] = 'classic+ble'
 
-    # Advertisement-Daten einmergen (Name, UUIDs, Appearance, RSSI)
+    # Advertisement-Daten einmergen (Name, UUIDs, Appearance, RSSI, AddrType)
     for mac, adv in results['adv'].items():
         if mac not in all_devices:
             all_devices[mac] = {'type': 'ble', 'first_seen': datetime.now().isoformat()}
@@ -256,6 +300,13 @@ def scan_bluetooth(duration=15, with_fingerprint=True, oui_db=None):
             dev['rssi'] = adv['rssi']
         if adv['company_id'] is not None:
             dev['company_id'] = adv['company_id']
+        # Address Type (public/random) + subtype (resolvable/static/...) -
+        # entscheidend fuer Tracker-Klassifikation: Public Samsung-OUI ist
+        # fast immer Hausgeraet, Random RPA ist Privacy-Geraet (Phone/Tag).
+        if adv.get('addr_type'):
+            dev['addr_type'] = adv['addr_type']
+        if adv.get('addr_subtype'):
+            dev['addr_subtype'] = adv['addr_subtype']
 
     # SDP-Abfrage für BT Classic Geräte ohne UUIDs (v4.5)
     if with_fingerprint:
@@ -301,6 +352,8 @@ def _apply_fingerprinting(devices, oui_db=None):
             appearance_code=dev.get('appearance'),
             oui_vendor=vendor,
             company_id=dev.get('company_id'),
+            addr_type=dev.get('addr_type'),
+            addr_subtype=dev.get('addr_subtype'),
         )
         dev['vendor']      = vendor
         dev['risk']        = fp['risk']

@@ -294,7 +294,9 @@ CAMERA_OUI_PREFIXES = {
 # FINGERPRINT FUNKTION
 # ============================================================
 
-def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendor='', company_id=None):
+def fingerprint_device(mac, name='', uuids=None, appearance_code=None,
+                       oui_vendor='', company_id=None,
+                       addr_type=None, addr_subtype=None):
     """
     Bewertet ein BT/BLE-Gerät anhand von UUIDs, Appearance, Name, OUI, Company ID.
 
@@ -305,6 +307,8 @@ def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendo
         appearance_code: BLE Appearance Code (int) oder None
         oui_vendor:      Herstellername aus IEEE OUI-Lookup
         company_id:      BT SIG Company ID (int) aus Manufacturer Data
+        addr_type:       'public' / 'random' / 'unknown' (BLE Address Type)
+        addr_subtype:    'resolvable' / 'non_resolvable' / 'static' (nur bei random)
 
     Returns:
         dict mit: risk, has_mic, has_camera, has_tracker, device_type, flags
@@ -384,43 +388,72 @@ def fingerprint_device(mac, name='', uuids=None, appearance_code=None, oui_vendo
         if not any('IoT' in f for f in flags):
             flags.append(f'⚠ IoT-Chip-Hersteller: {oui_vendor}')
 
-    # 6. Tracker-Erkennung
-    # a) Gerätename
-    for pattern in _TRACKER_NAME_PATTERNS:
-        if pattern in name_lower:
-            has_tracker = True
-            risk = RISK_HIGH
-            flags.append(f'🔍 TRACKER Name: "{name}"')
-            break
+    # 6. Tracker-Erkennung — Reihenfolge nach Vertrauensgrad:
+    #
+    # HARTE Indikatoren (eindeutig Tracker):
+    #   a) Appearance Code 0x0200 (Tag/Tracker) oder 0x0240 (Schluesselanhaenger)
+    #   b) Tracker-Name im Advertisement
+    #   c) Tracker-spezifische Service-UUID
+    #
+    # WEICHE Indikatoren (nur wenn keine harten Gegen-Beweise):
+    #   d) Company ID (Apple/Samsung/Google/Tile)  +  Address-Type-Heuristik
 
-    # b) Company ID (Apple FindMy, Samsung SmartTag, Google, Tile)
-    #    Ausnahme: bekannte Nicht-Tracker (TV, Soundbar, Drucker etc.)
-    if company_id is not None:
-        tracker_brand = TRACKER_COMPANY_IDS.get(company_id)
-        if tracker_brand:
-            is_excluded = any(ex in name_lower for ex in _TRACKER_NAME_EXCLUDES)
-            if is_excluded:
-                flags.append(f'ℹ️ Company ID {company_id} ({tracker_brand}) — kein Tracker (bekanntes Gerät: "{name}")')
-            else:
-                has_tracker = True
-                risk = RISK_HIGH
-                flags.append(f'🔍 TRACKER Company ID {company_id}: {tracker_brand}')
-
-    # c) Appearance Code: Tag/Tracker (0x0200) oder Schlüsselanhänger (0x0240)
+    # a) Appearance Code = HARTER Tracker-Marker (BLE-Standard, eindeutig)
     if appearance_code in (0x0200, 0x0240):
         has_tracker = True
         risk = _max_risk(risk, RISK_HIGH)
-        if not any('TRACKER' in f for f in flags):
-            app_label = APPEARANCE_DB.get(appearance_code, ('Tracker', False))[0]
-            flags.append(f'🔍 TRACKER Appearance: {app_label}')
+        app_label = APPEARANCE_DB.get(appearance_code, ('Tracker', False))[0]
+        flags.append(f'🔍 TRACKER (Appearance 0x{appearance_code:04x}: {app_label})')
 
-    # d) Tracker-Service-UUID (Tile, Chipolo, Samsung SmartThings Find)
+    # b) Tracker-Name (eindeutig - "AirTag", "SmartTag", "Tile" etc.)
+    if not has_tracker:
+        for pattern in _TRACKER_NAME_PATTERNS:
+            if pattern in name_lower:
+                has_tracker = True
+                risk = RISK_HIGH
+                flags.append(f'🔍 TRACKER Name: "{name}"')
+                break
+
+    # c) Tracker-Service-UUID (Tile, Chipolo, Samsung SmartThings Find)
     tracker_uuids = {'feed', 'feea', 'fe9a', 'fd44', 'fabe'}
     for uuid in uuids:
         uuid_short = uuid[-4:] if len(uuid) > 4 else uuid
         if uuid_short in tracker_uuids:
             has_tracker = True
-            # risk schon durch SERVICE_UUID_DB gesetzt (RISK_HIGH)
+            # risk schon durch SERVICE_UUID_DB gesetzt
+            break
+
+    # d) Company ID + Address-Type-Heuristik (weicher Indikator)
+    #    Public Address + Tracker-CompanyID = fast immer Hausgeraet (TV, Soundbar,
+    #    Fridge etc.) - Hersteller nutzt seine OUI als stationaere Identifikation.
+    #    Random Address (besonders RPA = bits 7..6 = 01) + Tracker-CompanyID =
+    #    Privacy-Geraet (Phone, Watch, SmartTag) - waehrscheinlich Tracker wenn
+    #    keine Gegenindikatoren (Name, Excludes-Pattern).
+    if company_id is not None and not has_tracker:
+        tracker_brand = TRACKER_COMPANY_IDS.get(company_id)
+        if tracker_brand:
+            is_excluded = any(ex in name_lower for ex in _TRACKER_NAME_EXCLUDES)
+            if is_excluded:
+                flags.append(f'ℹ️ Company ID {company_id} ({tracker_brand}) — kein Tracker (bekanntes Geraet: "{name}")')
+            elif addr_type == 'public':
+                # Public OUI + Samsung/Apple = stationaeres Hausgeraet
+                flags.append(f'ℹ️ Company ID {company_id} ({tracker_brand}) — Public-Address-OUI, wahrscheinlich Hausgeraet (TV/Soundbar/IoT)')
+                if not device_types:
+                    device_types.append('Hausgeraet (BLE)')
+            elif addr_type == 'random' and addr_subtype == 'resolvable':
+                # RPA + Tracker-CompanyID = wahrscheinlich Tracker
+                has_tracker = True
+                risk = RISK_HIGH
+                flags.append(f'🔍 TRACKER Company ID {company_id} ({tracker_brand}) + RPA-Address (Privacy-Mode)')
+            elif addr_type == 'random' and addr_subtype == 'static':
+                # Static Random + Tracker-CompanyID = unklar (manche Geraete)
+                risk = _max_risk(risk, RISK_MEDIUM)
+                flags.append(f'⚠ Company ID {company_id} ({tracker_brand}) + Random-Static-Address (unklar)')
+            else:
+                # addr_type unknown = altes Verhalten (Company-ID = Tracker)
+                # Konservativ: Medium statt High, weil Heuristik unsicher
+                risk = _max_risk(risk, RISK_MEDIUM)
+                flags.append(f'⚠ Company ID {company_id} ({tracker_brand}) — Address-Type unbekannt, koennte Tracker oder Hausgeraet sein')
 
     device_type = device_types[0] if device_types else 'Unbekannt'
 
