@@ -11,7 +11,7 @@ log = logging.getLogger('CYT-OUI')
 
 OUI_URL       = 'https://standards-oui.ieee.org/oui/oui.txt'
 OUI_CACHE     = '/root/loot/chasing_your_tail/oui_cache.json'
-UPDATE_DAYS   = 7  # Wöchentlich updaten
+UPDATE_DAYS   = 365  # Wöchentlich updaten
 
 def _parse_oui_txt(text):
     """Parst IEEE oui.txt Format."""
@@ -56,7 +56,7 @@ def _needs_update(updated_str):
     except Exception:
         return True
 
-def _download_oui(timeout=15):
+def _download_oui(timeout=5):
     """Lädt OUI-Liste von IEEE herunter."""
     try:
         log.info('Lade OUI-Liste von IEEE...')

@@ -365,7 +365,42 @@ def correlate_wifi_bt(wifi_devices, bt_devices):
 # ============================================================
 
 def get_gps_position():
-    """Liest GPS-Position via GPS_GET Pager-API."""
+    """Liest GPS-Position. Bevorzugt vorhandene argus gps_track.csv
+    (vom scan_engine Mudi-Sampler geschrieben, kostet keinen Subprocess);
+    fällt zurück auf GPS_GET Pager-Binary."""
+    # Argus tip: scan_engine writes /root/loot/argus/gps_track.csv on
+    # every successful Mudi GPS poll. Reading the last line is cheap
+    # and gives bt_scanner a real fix even when the pager has no local
+    # GPS hardware.
+    for track_path in ('/root/loot/argus/gps_track.csv',):
+        try:
+            with open(track_path) as f:
+                last = None
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        last = line
+            if last:
+                parts = last.split(',')
+                if len(parts) >= 3:
+                    lat = float(parts[1])
+                    lon = float(parts[2])
+                    if lat != 0.0 or lon != 0.0:
+                        return {
+                            'lat': lat, 'lon': lon, 'alt': 0.0, 'speed': 0.0,
+                            'time': datetime.now().isoformat(),
+                            'fix': True, 'source': 'argus_track'
+                        }
+        except Exception:
+            pass
+
+    # Skip the GPS_GET fallback entirely if the host already supplies GPS
+    # (argus scan_engine writes gps_track.csv via Mudi). Avoids 3-5s per
+    # BT round when no local USB GPS is attached.
+    if os.environ.get('BT_SCANNER_NO_LOCAL_GPS'):
+        return {'lat': 0, 'lon': 0, 'alt': 0, 'speed': 0,
+                'time': datetime.now().isoformat(), 'fix': False}
+
     try:
         result = subprocess.run(
             ['GPS_GET'], capture_output=True, text=True, timeout=5
@@ -381,7 +416,7 @@ def get_gps_position():
                     'lat': lat, 'lon': lon,
                     'alt': alt, 'speed': spd,
                     'time': datetime.now().isoformat(),
-                    'fix': True
+                    'fix': True, 'source': 'gps_get'
                 }
     except Exception as e:
         log.debug(f'GPS Fehler: {e}')

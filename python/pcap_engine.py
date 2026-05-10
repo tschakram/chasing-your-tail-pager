@@ -23,7 +23,10 @@ def read_pcap_probes(filepath):
         'count': 0,
         'first_seen': None,
         'last_seen': None,
-        'ssids': set()
+        'ssids': set(),
+        'rssi_max': None,
+        'rssi_last': None,
+        'rssi_seen': 0,
     })
 
     if not os.path.exists(filepath):
@@ -81,6 +84,8 @@ def read_pcap_probes(filepath):
                 else:
                     continue
 
+                rssi = _parse_radiotap_rssi(data[:rt_len])
+
                 # SSID aus Tagged Parameters
                 # Probe Request:  Fixed Params = 4 Bytes  → tag_start = 24+4 = 28
                 # Probe Response: Fixed Params = 12 Bytes → tag_start = 24+12 = 36
@@ -102,13 +107,19 @@ def read_pcap_probes(filepath):
                         pass
 
                 # Gerät speichern
-                devices[mac]['count'] += 1
-                if devices[mac]['first_seen'] is None:
-                    devices[mac]['first_seen'] = ts_sec
-                devices[mac]['last_seen'] = ts_sec
+                d = devices[mac]
+                d['count'] += 1
+                if d['first_seen'] is None:
+                    d['first_seen'] = ts_sec
+                d['last_seen'] = ts_sec
+                if rssi is not None:
+                    d['rssi_seen'] += 1
+                    d['rssi_last'] = rssi
+                    if d['rssi_max'] is None or rssi > d['rssi_max']:
+                        d['rssi_max'] = rssi
                 # Binärmüll-SSIDs filtern
                 if ssid and ssid.isprintable() and len(ssid) > 1:
-                    devices[mac]['ssids'].add(ssid)
+                    d['ssids'].add(ssid)
 
     except Exception as e:
         log.error(f"PCAP-Lesefehler: {e}")
@@ -121,7 +132,10 @@ def read_pcap_probes(filepath):
             'first_seen': data['first_seen'],
             'last_seen': data['last_seen'],
             'ssids': list(data['ssids']),
-            'appearances': data['count']
+            'appearances': data['count'],
+            'rssi_max': data['rssi_max'],
+            'rssi_last': data['rssi_last'],
+            'rssi_seen': data['rssi_seen'],
         }
 
     log.info(f"PCAP gelesen: {len(result)} Geräte gefunden")
@@ -300,9 +314,21 @@ def analyze_persistence(*scans, threshold=0.6, min_appearances=2):
             scan.get(mac, {}).get('count', 0) for scan in scans
         )
         all_ssids = set()
+        rssi_max = None
+        rssi_last = None
+        last_seen_ts = -1
         for scan in scans:
             if mac in scan:
-                all_ssids.update(scan[mac].get('ssids', []))
+                entry = scan[mac]
+                all_ssids.update(entry.get('ssids', []))
+                rmax = entry.get('rssi_max')
+                if rmax is not None and (rssi_max is None or rmax > rssi_max):
+                    rssi_max = rmax
+                ls = entry.get('last_seen') or 0
+                rl = entry.get('rssi_last')
+                if rl is not None and ls >= last_seen_ts:
+                    rssi_last = rl
+                    last_seen_ts = ls
 
         if total_appearances >= min_appearances:
             scored[mac] = {
@@ -311,6 +337,8 @@ def analyze_persistence(*scans, threshold=0.6, min_appearances=2):
                 'present_in_windows': present,
                 'total_windows': len(scans),
                 'ssids': list(all_ssids),
+                'rssi_max': rssi_max,
+                'rssi_last': rssi_last,
                 'suspicious': score >= threshold
             }
 

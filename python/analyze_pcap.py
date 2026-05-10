@@ -31,6 +31,16 @@ def mac_type(mac):
     """Gibt MAC-Typ zurück: 'lokal (gespooft?)' oder 'global'"""
     return '⚠ lokal/gespooft' if is_locally_administered(mac) else 'global'
 
+def fmt_rssi(d):
+    """Formatiert RSSI für Report-Tabelle. Max | last (dBm), '-' wenn keine Daten."""
+    rmax  = d.get('rssi_max')
+    rlast = d.get('rssi_last')
+    if rmax is None and rlast is None:
+        return '-'
+    if rmax == rlast or rlast is None:
+        return f'{rmax} dBm'
+    return f'{rmax}/{rlast} dBm'
+
 log = logging.getLogger('CYT-Analyze')
 
 def load_ignore_lists(config):
@@ -179,8 +189,8 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
 
         if new_suspicious:
             f.write('## ⚠️ WARNING - Verdächtige Geräte\n\n')
-            f.write('| MAC | Hersteller | Typ | Score | Appearances | Status |\n')
-            f.write('|-----|------------|-----|-------|-------------|--------|\n')
+            f.write('| MAC | Hersteller | Typ | Score | Appearances | RSSI | Status |\n')
+            f.write('|-----|------------|-----|-------|-------------|------|--------|\n')
             for mac, d in sorted(new_suspicious.items(),
                                  key=lambda x: x[1]['persistence_score'],
                                  reverse=True):
@@ -200,7 +210,7 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
                 else:
                     known_flag = '🆕 NEU'
                 f.write(f'| `{mac}` | {vendor} | {mtype} | {d["persistence_score"]:.2f} | '
-                        f'{d["appearances"]} | {known_flag} |\n')
+                        f'{d["appearances"]} | {fmt_rssi(d)} | {known_flag} |\n')
                 # WiGLE Lookup
                 if wigle_client:
                     ssids = [s for s in d.get('ssids', []) if s and len(s) > 2]
@@ -250,8 +260,8 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
                 f.write(f'| `{mac}` | {label} | {e["watch"]["message"]} |\n')
 
         f.write('\n## Alle Geräte\n\n')
-        f.write('| MAC | Hersteller | Typ | Score | Appearances | Fenster |\n')
-        f.write('|-----|------------|-----|-------|-------------|--------|\n')
+        f.write('| MAC | Hersteller | Typ | Score | Appearances | RSSI | Fenster |\n')
+        f.write('|-----|------------|-----|-------|-------------|------|--------|\n')
         for mac, d in sorted(scored.items(),
                              key=lambda x: x[1]['persistence_score'],
                              reverse=True):
@@ -259,7 +269,7 @@ def save_report(scored, suspicious, output_dir, ignore_macs, bt_devices=None, ou
             vendor = lookup(mac, oui_db) if oui_db else '?'
             mtype  = mac_type(mac)
             f.write(f'| {flag} `{mac}` | {vendor} | {mtype} | {d["persistence_score"]:.2f} | '
-                    f'{d["appearances"]} | '
+                    f'{d["appearances"]} | {fmt_rssi(d)} | '
                     f'{d["present_in_windows"]}/{d["total_windows"]} |\n')
 
         if ignore_macs:
