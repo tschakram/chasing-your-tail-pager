@@ -93,6 +93,7 @@ def _scan_btmon(duration=20):
                         'rssi': None, 'company_id': None,
                         'addr_type': addr_type,
                         'addr_subtype': addr_subtype,
+                        'msd_hex': None,   # Manufacturer-Data raw bytes (hex)
                     }
                 pending_addr_type = None
                 continue
@@ -131,6 +132,17 @@ def _scan_btmon(duration=20):
             m = re.match(r'\s+Company:\s+.+\((\d+)\)', line)
             if m:
                 adv_data[current]['company_id'] = int(m.group(1))
+                continue
+
+            # MSD-Payload-Bytes (Apple/Samsung Subtypen, Tracker-Pattern).
+            # btmon-Format nach "Company:": "          Data: 12 19 00 ..."
+            # Wir nehmen NUR die erste Data-Zeile pro Geraet (Subtype-byte ist
+            # ueblicherweise das erste Byte direkt nach Company-ID).
+            m = re.match(r'\s+Data:\s+([0-9a-fA-F ]+)', line)
+            if m and adv_data[current].get('company_id') is not None \
+                    and adv_data[current].get('msd_hex') is None:
+                # normalisiert (lowercase, ohne spaces)
+                adv_data[current]['msd_hex'] = m.group(1).strip().lower().replace(' ', '')
 
     except Exception as e:
         log.error(f'btmon Fehler: {e}')
@@ -307,6 +319,11 @@ def scan_bluetooth(duration=15, with_fingerprint=True, oui_db=None):
             dev['addr_type'] = adv['addr_type']
         if adv.get('addr_subtype'):
             dev['addr_subtype'] = adv['addr_subtype']
+        # MSD payload bytes (hex, ohne spaces). Wird vom bt_fingerprint
+        # ausgewertet um Apple-Continuity-Subtypes (AirTag vs iPhone) und
+        # Samsung-Subtypes (SmartTag vs TV/Phone) zu unterscheiden.
+        if adv.get('msd_hex'):
+            dev['msd_hex'] = adv['msd_hex']
 
     # SDP-Abfrage für BT Classic Geräte ohne UUIDs (v4.5)
     if with_fingerprint:
@@ -354,6 +371,7 @@ def _apply_fingerprinting(devices, oui_db=None):
             company_id=dev.get('company_id'),
             addr_type=dev.get('addr_type'),
             addr_subtype=dev.get('addr_subtype'),
+            msd_hex=dev.get('msd_hex'),
         )
         dev['vendor']      = vendor
         dev['risk']        = fp['risk']

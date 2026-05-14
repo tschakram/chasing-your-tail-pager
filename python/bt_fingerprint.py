@@ -166,6 +166,104 @@ TRACKER_COMPANY_IDS = {
     155: 'Tile, Inc.',                  # 0x009B Tile
 }
 
+
+# ============================================================
+# APPLE CONTINUITY MSD-SUBTYPES
+# (Public reverse-engineering von Apple-Manufacturer-Data)
+# Erstes Byte nach Company-ID = Type
+# Quelle: https://github.com/furiousMAC/continuity
+#
+# Nur 0x12 ist FindMy/AirTag-Beacon. Alle anderen sind Continuity-
+# Protokolle (Handoff, AirDrop, Hey-Siri etc.) - normales Apple-
+# Geraete-Verhalten, KEIN Tracker.
+# ============================================================
+APPLE_MSD_SUBTYPES = {
+    0x01: ('iBeacon',                   False, 'ibeacon'),
+    0x02: ('AirPrint',                  False, 'apple_device'),
+    0x03: ('AirDrop',                   False, 'apple_device'),
+    0x05: ('AirPlay',                   False, 'apple_device'),
+    0x07: ('AirPods/Magic-Pair',        False, 'airpods'),
+    0x08: ('HomeKit Hey-Siri',          False, 'apple_device'),
+    0x09: ('Apple TV Remote Setup',     False, 'apple_tv'),
+    0x0A: ('WiFi Settings',             False, 'apple_device'),
+    0x0B: ('Watch Continuity',          False, 'apple_watch'),
+    0x0C: ('Handoff',                   False, 'apple_device'),
+    0x0D: ('WiFi Network Joining',      False, 'apple_device'),
+    0x0E: ('Hotspot',                   False, 'apple_device'),
+    0x0F: ('WiFi Join V2',              False, 'apple_device'),
+    0x10: ('Nearby (Continuity)',       False, 'apple_device'),
+    0x11: ('U1 Ranging',                False, 'apple_device'),
+    0x12: ('FindMy / AirTag',           True,  'airtag'),        # !!! TRACKER
+    0x14: ('Find My Network',           True,  'findmy_network'),# !!! TRACKER
+    0x16: ('AirTag (alt format)',       True,  'airtag'),        # !!! TRACKER
+}
+
+
+def _parse_apple_msd(msd_hex):
+    """Liest erstes Byte (subtype) aus Apple-MSD payload.
+    Returns (label, is_tracker, device_kind) oder None bei unparsbar.
+
+    msd_hex ist die hex-string ohne spaces, z.B. '1019000000...'.
+    Bei Apple ist Byte 0 = subtype, Byte 1 = subtype-payload-laenge.
+    """
+    if not msd_hex or len(msd_hex) < 2:
+        return None
+    try:
+        subtype = int(msd_hex[0:2], 16)
+    except ValueError:
+        return None
+    return APPLE_MSD_SUBTYPES.get(subtype,
+                                  (f'Apple type 0x{subtype:02x}',
+                                   False, 'apple_device_unknown'))
+
+
+# ============================================================
+# SAMSUNG MSD-PATTERN
+# Samsung-MSD ist firmware-abhaengig und nicht offen dokumentiert.
+# Bekannte Patterns aus Reverse-Engineering:
+#   - SmartTag (BLE):    haeufig '01000200...' oder '0200xxxxxx...'
+#   - Galaxy Phone:      '4204xxxxxx...' (Quick-Share / Nearby-Share)
+#   - SmartThings/TV:    '4202' / '4243' (verschiedene Subtypes)
+#   - Galaxy Buds:       '0104' / '01001b...'
+#
+# Konservativ: wir markieren NUR SmartTag-Pattern als Tracker; alles
+# andere = Samsung-Geraet (nicht Tracker, medium-risk wenn RPA, sonst low).
+# ============================================================
+SAMSUNG_SMARTTAG_PREFIXES = (
+    '01000200',   # SmartTag manuf. specific (häufig)
+    '02000100',   # SmartTag alternative
+    '0200',       # vorsichtig: kann andere Subtypes treffen,
+                  # nur in Kombination mit RPA als Tracker werten
+)
+SAMSUNG_PHONE_PREFIXES = (
+    '4204', '4242', '4243', '4202',  # Quick-Share / Nearby-Share / SmartThings
+)
+SAMSUNG_BUDS_PREFIXES = (
+    '0104', '01001b',                # Galaxy Buds
+)
+
+
+def _parse_samsung_msd(msd_hex):
+    """Returns (label, is_tracker, device_kind) oder None bei unparsbar.
+
+    Konservativ: 'wahrscheinlich SmartTag' nur bei exakten Prefixes.
+    Wenn keine Prefix matcht: Samsung-Geraet (nicht Tracker).
+    """
+    if not msd_hex or len(msd_hex) < 4:
+        return None
+    msd = msd_hex.lower()
+    if any(msd.startswith(p) for p in SAMSUNG_SMARTTAG_PREFIXES[:2]):
+        return ('Samsung SmartTag', True, 'samsung_smarttag')
+    if msd.startswith(SAMSUNG_SMARTTAG_PREFIXES[2]):
+        # weak signal: Pattern '0200' allein, koennte SmartTag ODER was
+        # anderes sein. Konservativ: nicht als Tracker werten.
+        return ('Samsung BLE (unklarer Subtype)', False, 'samsung_device_unknown')
+    if any(msd.startswith(p) for p in SAMSUNG_PHONE_PREFIXES):
+        return ('Samsung Galaxy Phone/TV', False, 'samsung_device')
+    if any(msd.startswith(p) for p in SAMSUNG_BUDS_PREFIXES):
+        return ('Samsung Galaxy Buds', False, 'samsung_buds')
+    return ('Samsung-Geraet (unbekannter Subtype)', False, 'samsung_device_unknown')
+
 # ============================================================
 # GERÄTENAMEN MUSTER
 # ============================================================
@@ -296,7 +394,8 @@ CAMERA_OUI_PREFIXES = {
 
 def fingerprint_device(mac, name='', uuids=None, appearance_code=None,
                        oui_vendor='', company_id=None,
-                       addr_type=None, addr_subtype=None):
+                       addr_type=None, addr_subtype=None,
+                       msd_hex=None):
     """
     Bewertet ein BT/BLE-Gerät anhand von UUIDs, Appearance, Name, OUI, Company ID.
 
@@ -423,37 +522,66 @@ def fingerprint_device(mac, name='', uuids=None, appearance_code=None,
             # risk schon durch SERVICE_UUID_DB gesetzt
             break
 
-    # d) Company ID + Address-Type-Heuristik (weicher Indikator)
-    #    Public Address + Tracker-CompanyID = fast immer Hausgeraet (TV, Soundbar,
-    #    Fridge etc.) - Hersteller nutzt seine OUI als stationaere Identifikation.
-    #    Random Address (besonders RPA = bits 7..6 = 01) + Tracker-CompanyID =
-    #    Privacy-Geraet (Phone, Watch, SmartTag) - waehrscheinlich Tracker wenn
-    #    keine Gegenindikatoren (Name, Excludes-Pattern).
+    # d) Company ID + MSD-Subtype + Address-Type-Heuristik
+    #
+    # Erweiterte Logik nach Drive-Test 13.05.: pure Company-ID-Check
+    # markiert jedes iPhone/Galaxy-Phone in Reichweite als Tracker
+    # (alle nutzen RPA + CompanyID 76/117). Lösung: MSD-Subtype-Bytes
+    # auswerten:
+    #   - Apple Continuity Subtype 0x12/0x14/0x16 -> echter AirTag/FindMy
+    #   - Apple 0x10/0x0F/0x0C/0x07 etc. -> normales Apple-Geraet
+    #   - Samsung MSD '01000200...'/'02000100...' -> SmartTag
+    #   - Samsung '4204...'/'0104...' -> Phone/Buds/TV
     if company_id is not None and not has_tracker:
         tracker_brand = TRACKER_COMPANY_IDS.get(company_id)
         if tracker_brand:
             is_excluded = any(ex in name_lower for ex in _TRACKER_NAME_EXCLUDES)
+            msd_info = None
+            if company_id == 76:        # Apple
+                msd_info = _parse_apple_msd(msd_hex)
+            elif company_id == 117:     # Samsung
+                msd_info = _parse_samsung_msd(msd_hex)
+
             if is_excluded:
                 flags.append(f'ℹ️ Company ID {company_id} ({tracker_brand}) — kein Tracker (bekanntes Geraet: "{name}")')
             elif addr_type == 'public':
-                # Public OUI + Samsung/Apple = stationaeres Hausgeraet
-                flags.append(f'ℹ️ Company ID {company_id} ({tracker_brand}) — Public-Address-OUI, wahrscheinlich Hausgeraet (TV/Soundbar/IoT)')
+                # Public OUI = stationaeres Hausgeraet, MSD-Subtype optional
+                flags.append(f'ℹ️ Company ID {company_id} ({tracker_brand}) — Public-Address-OUI, Hausgeraet (TV/Soundbar/IoT)')
+                if msd_info:
+                    flags.append(f'ℹ️ MSD: {msd_info[0]}')
                 if not device_types:
                     device_types.append('Hausgeraet (BLE)')
-            elif addr_type == 'random' and addr_subtype == 'resolvable':
-                # RPA + Tracker-CompanyID = wahrscheinlich Tracker
+            elif msd_info and msd_info[1]:
+                # MSD-Subtype identifiziert explizit als Tracker
                 has_tracker = True
                 risk = RISK_HIGH
-                flags.append(f'🔍 TRACKER Company ID {company_id} ({tracker_brand}) + RPA-Address (Privacy-Mode)')
+                flags.append(f'🔍 TRACKER MSD-Subtype: {msd_info[0]} '
+                             f'({tracker_brand})')
+                if msd_info[2] and msd_info[2] not in device_types:
+                    device_types.insert(0, msd_info[2])
+            elif msd_info and not msd_info[1]:
+                # MSD-Subtype identifiziert als nicht-Tracker-Apple/Samsung-
+                # Geraet (z.B. iPhone Continuity, Galaxy Phone, Buds, TV)
+                flags.append(f'ℹ️ {msd_info[0]} (Company ID {company_id}) — '
+                             f'kein Tracker laut MSD-Subtype')
+                if msd_info[2] and msd_info[2] not in device_types:
+                    device_types.insert(0, msd_info[2])
+                # Low risk fuer Wachs-Wissen, kein high-Alarm
+                risk = _max_risk(risk, RISK_LOW)
+            elif addr_type == 'random' and addr_subtype == 'resolvable':
+                # RPA + Tracker-CompanyID OHNE MSD-Info = unklar
+                # Konservativer: Medium statt High wenn wir MSD nicht kennen
+                # (alpha10-Fix: vorher war das immer high, gab False-Positives
+                # bei jedem iPhone)
+                risk = _max_risk(risk, RISK_MEDIUM)
+                flags.append(f'⚠ Company ID {company_id} ({tracker_brand}) + RPA — moeglicher Tracker, MSD-Subtype nicht erfasst')
             elif addr_type == 'random' and addr_subtype == 'static':
-                # Static Random + Tracker-CompanyID = unklar (manche Geraete)
                 risk = _max_risk(risk, RISK_MEDIUM)
                 flags.append(f'⚠ Company ID {company_id} ({tracker_brand}) + Random-Static-Address (unklar)')
             else:
-                # addr_type unknown = altes Verhalten (Company-ID = Tracker)
-                # Konservativ: Medium statt High, weil Heuristik unsicher
-                risk = _max_risk(risk, RISK_MEDIUM)
-                flags.append(f'⚠ Company ID {company_id} ({tracker_brand}) — Address-Type unbekannt, koennte Tracker oder Hausgeraet sein')
+                # addr_type unknown - sehr konservativ medium
+                risk = _max_risk(risk, RISK_LOW)
+                flags.append(f'⚠ Company ID {company_id} ({tracker_brand}) — Address-Type unbekannt')
 
     device_type = device_types[0] if device_types else 'Unbekannt'
 

@@ -121,6 +121,7 @@ def _ensure_bt_fingerprinting(bt_devices, oui_db=None):
                 company_id=d.get('company_id'),
                 addr_type=d.get('addr_type'),
                 addr_subtype=d.get('addr_subtype'),
+                msd_hex=d.get('msd_hex'),
             )
             d.update({
                 'vendor':      vendor,
