@@ -38,7 +38,16 @@ def _scan_btmon(duration=20):
     Gibt {mac_lower: {name, uuids, appearance, rssi, addr_type, addr_subtype}}
     zurueck. addr_type: 'public' oder 'random'. addr_subtype nur bei random:
     'resolvable' / 'non_resolvable' / 'static'.
+
+    Robustness: nutzt select() statt readline() damit die Funktion nach
+    'duration' SICHER beendet wird, selbst wenn btmon nichts mehr ausgibt
+    (z.B. wenn hci0 in einem stuck-state ist nach vorherigem Round).
+    Endurance-Test 14.05. zeigte: ohne select() hing _scan_btmon in
+    readline() forever wenn nach Round 1 keine Adverts mehr kamen ->
+    nur 1 BT-JSON aus 84 Rounds.
     """
+    import select
+
     adv_data = {}
     current  = None  # aktuelle MAC
     pending_addr_type = None  # 'public'/'random', wird vor 'Address:' gelesen
@@ -48,7 +57,8 @@ def _scan_btmon(duration=20):
             ['btmon', '-t'],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True
+            text=True,
+            bufsize=1,
         )
     except FileNotFoundError:
         log.warning('btmon nicht gefunden – UUID-Scan übersprungen')
@@ -56,7 +66,19 @@ def _scan_btmon(duration=20):
 
     start = time.time()
     try:
-        while time.time() - start < duration:
+        while True:
+            remaining = duration - (time.time() - start)
+            if remaining <= 0:
+                break
+            # Warte max. 1s ODER bis remaining-Sekunden auf neue stdout-Daten.
+            # Wenn timeout: nochmal pruefen ob duration abgelaufen ist.
+            try:
+                ready, _, _ = select.select(
+                    [proc.stdout], [], [], min(remaining, 1.0))
+            except (OSError, ValueError):
+                break
+            if not ready:
+                continue
             line = proc.stdout.readline()
             if not line:
                 break
@@ -147,8 +169,18 @@ def _scan_btmon(duration=20):
     except Exception as e:
         log.error(f'btmon Fehler: {e}')
     finally:
-        proc.terminate()
-        proc.wait()
+        # Robustes terminate: zuerst SIGTERM (clean), nach 2s SIGKILL.
+        # Vermeidet hangenden btmon-zombie-Process der hci0 belegt und
+        # naechste Round blockiert (Bug aus 5h-Endurance-Test 14.05.).
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=1)
+        except Exception:
+            pass
 
     log.info(f'btmon: Advertisement Data für {len(adv_data)} BLE-Geräte gesammelt')
     return adv_data
