@@ -12,12 +12,12 @@
   ],
   "ignore_macs": [
     "AA:BB:CC:DD:EE:FF",
-    "70:B1:3D:AB:74:??",
-    "11:22:33:44:??:??"
+    "DE:AD:BE:EF:??:??",
+    "CA:FE:CA:FE:??:??"
   ],
   "comments": {
     "AA:BB:CC:DD:EE:FF": "Beispiel: eigenes Garmin GPS-Geraet (exact)",
-    "70:B1:3D:AB:74:??": "Beispiel: Samsung TV - BLE-Privacy-Rotation im letzten Byte",
-    "11:22:33:44:??:??": "Beispiel: Geraete-Familie mit 2-Byte-Rotation"
+    "DE:AD:BE:EF:??:??": "Beispiel: DEAD-BEEF Placeholder fuer BLE-Privacy-Rotation (eigene OUI eintragen)",
+    "CA:FE:CA:FE:??:??": "Beispiel: CAFE Placeholder fuer 2-Byte-Rotation (eigene OUI eintragen)"
   }
 }

@@ -20,8 +20,8 @@ Case-insensitive: intern alles lowercase, eingehende MACs ebenfalls.
 
 Verwendung:
     from mac_ignore import MacIgnoreSet
-    ig = MacIgnoreSet(["aa:bb:cc:dd:ee:01", "70:b1:3d:ab:74:??"])
-    "70:B1:3D:AB:74:05" in ig   # True (Pattern + case-insensitive)
+    ig = MacIgnoreSet(["aa:bb:cc:dd:ee:01", "de:ad:be:ef:??:??"])
+    "DE:AD:BE:EF:55:66" in ig   # True (Pattern + case-insensitive)
     "11:22:33:44:55:66" in ig   # False
     len(ig)                      # 2 (raw entries, nicht expanded)
 """
@@ -89,21 +89,21 @@ class MacIgnoreSet:
 if __name__ == '__main__':
     ig = MacIgnoreSet([
         "AA:BB:CC:DD:EE:01",
-        "70:b1:3d:ab:74:??",
-        "11:22:33:44:??:??",
+        "de:ad:be:ef:??:??",
+        "ca:fe:ca:fe:??:??",
         "  ",
         "",
         None,
     ])
     assert "aa:bb:cc:dd:ee:01" in ig
     assert "AA:BB:CC:DD:EE:01" in ig
-    assert "70:b1:3d:ab:74:00" in ig
-    assert "70:b1:3d:ab:74:ff" in ig
-    assert "70:b1:3d:ab:74:FF" in ig
-    assert "70:b1:3d:ab:75:00" not in ig
-    assert "11:22:33:44:55:66" in ig
-    assert "11:22:33:44:ff:ff" in ig
-    assert "11:22:33:45:55:66" not in ig
+    assert "de:ad:be:ef:00:00" in ig
+    assert "de:ad:be:ef:ff:ff" in ig
+    assert "DE:AD:BE:EF:55:66" in ig
+    assert "de:ad:be:ee:00:00" not in ig
+    assert "ca:fe:ca:fe:00:00" in ig
+    assert "ca:fe:ca:fe:ff:ff" in ig
+    assert "ca:fe:ca:ff:00:00" not in ig
     assert "ff:ff:ff:ff:ff:ff" not in ig
     assert len(ig) == 3
     assert ig.num_patterns == 2
