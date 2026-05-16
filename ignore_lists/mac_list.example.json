@@ -1,6 +1,23 @@
 {
-  "ignore_macs": [],
+  "_doc": [
+    "ignore_macs: Liste von MAC-Adressen, die NICHT als verdaechtig gewertet werden.",
+    "Zwei Eintragstypen werden unterstuetzt:",
+    "  1) Exakte MAC:   \"aa:bb:cc:dd:ee:ff\"  (case-insensitive)",
+    "  2) Wildcards:    \"aa:bb:cc:dd:ee:??\"   - matched alle 256 Variants",
+    "                   \"aa:bb:cc:dd:??:??\"   - matched alle 65536 Variants",
+    "                   \"aa:bb:cc:*\"          - alles mit diesem Prefix",
+    "Wildcards loesen BLE-Privacy-Rotation: Samsung TVs / iPhones / Watches",
+    "rotieren ihre BLE-Adresse ~alle 15 Min - ein Pattern ersetzt N exact-Eintraege.",
+    "comments-Dict ist informativ, wird vom Code ignoriert."
+  ],
+  "ignore_macs": [
+    "AA:BB:CC:DD:EE:FF",
+    "70:B1:3D:AB:74:??",
+    "11:22:33:44:??:??"
+  ],
   "comments": {
-    "AA:BB:CC:DD:EE:FF": "Beispiel: Eigenes Garmin GPS-Gerät"
+    "AA:BB:CC:DD:EE:FF": "Beispiel: eigenes Garmin GPS-Geraet (exact)",
+    "70:B1:3D:AB:74:??": "Beispiel: Samsung TV - BLE-Privacy-Rotation im letzten Byte",
+    "11:22:33:44:??:??": "Beispiel: Geraete-Familie mit 2-Byte-Rotation"
   }
 }

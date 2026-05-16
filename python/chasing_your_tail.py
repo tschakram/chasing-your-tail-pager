@@ -11,6 +11,12 @@ OpenWrt-Anpassungen:
 
 import sqlite3
 import json
+
+import os as _mi_os, sys as _mi_sys
+_MI_HERE = _mi_os.path.dirname(_mi_os.path.abspath(__file__))
+if _MI_HERE not in _mi_sys.path:
+    _mi_sys.path.insert(0, _MI_HERE)
+from mac_ignore import MacIgnoreSet
 import os
 import sys
 import logging
@@ -85,7 +91,7 @@ def load_config(config_path):
 # ============================================================
 def load_ignore_lists(config):
     """Lädt MAC- und SSID-Ignorier-Listen aus JSON."""
-    ignore_macs = set()
+    ignore_macs = MacIgnoreSet()
     ignore_ssids = set()
 
     mac_path = config['paths']['ignore_lists'].get('mac', '')

@@ -11,6 +11,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pcap_engine import read_pcap_beacons
+from mac_ignore import MacIgnoreSet
 from oui_lookup import load_oui_db, lookup
 from bt_fingerprint import (
     fingerprint_device, risk_emoji, RISK_HIGH, RISK_MEDIUM, CAMERA_OUI_PREFIXES
@@ -521,11 +522,11 @@ def main():
     oui_db = load_oui_db()
 
     # Ignore-Liste laden
-    ignore_macs = set()
+    ignore_macs = MacIgnoreSet()
     mac_list_path = '/root/loot/chasing_your_tail/ignore_lists/mac_list.json'
     try:
         with open(mac_list_path) as f:
-            ignore_macs = set(m.lower() for m in json.load(f).get('ignore_macs', []))
+            ignore_macs = MacIgnoreSet(json.load(f).get('ignore_macs', []))
         if ignore_macs:
             log.info(f'Ignore-MACs geladen: {len(ignore_macs)}')
     except Exception:

@@ -7,6 +7,7 @@ import os, sys, json, logging, argparse
 from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pcap_engine import read_pcap_probes, analyze_persistence
+from mac_ignore import MacIgnoreSet
 from oui_lookup import load_oui_db, lookup
 from wigle_lookup import WiGLEClient, lookup_device, format_wigle_section, format_nearby_section
 from suspects_db import SuspectsDB
@@ -45,7 +46,7 @@ log = logging.getLogger('CYT-Analyze')
 
 def load_ignore_lists(config):
     """Lädt MAC und SSID Ignore-Listen aus config."""
-    ignore_macs  = set()
+    ignore_macs  = MacIgnoreSet()
     ignore_ssids = set()
 
     # Aus config.json Pfade lesen
@@ -57,7 +58,7 @@ def load_ignore_lists(config):
     if os.path.exists(mac_file):
         with open(mac_file) as f:
             data = json.load(f)
-        ignore_macs = set(m.lower() for m in data.get('ignore_macs', []))
+        ignore_macs = MacIgnoreSet(data.get('ignore_macs', []))
         log.info(f'Ignore-MACs geladen: {len(ignore_macs)}')
 
     if os.path.exists(ssid_file):
